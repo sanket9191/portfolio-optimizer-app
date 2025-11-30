@@ -50,7 +50,7 @@ function App() {
     try {
       let data;
       
-      if (useWalkForward) {
+      if (useWalkForward || usePredictive) {
         // Call walk-forward endpoint with optional predictive params
         const payload = {
           tickers,
@@ -75,9 +75,18 @@ function App() {
           })
         };
         
+        console.log('📤 Sending walk-forward request:', payload);
         data = await optimizeWalkForward(payload);
+        console.log('📥 Received walk-forward response:', data);
+        
+        // Ensure mode is set for proper component rendering
+        if (!data.mode) {
+          data.mode = usePredictive ? 'predictive_ml' : 'walkforward';
+          console.log('⚠️ Mode was missing, set to:', data.mode);
+        }
       } else {
         // Call single-period endpoint
+        console.log('📤 Sending single-period optimization request');
         data = await optimizePortfolio({
           tickers,
           start_date: parameters.startDate,
@@ -88,15 +97,29 @@ function App() {
           benchmark: benchmark,
           max_weight: 0.17
         });
+        console.log('📥 Received single-period response:', data);
       }
 
       setResults(data);
     } catch (err) {
+      console.error('❌ Optimization error:', err);
       setError(err.message || 'An error occurred during optimization');
     } finally {
       setLoading(false);
     }
   };
+
+  // Log when results change
+  React.useEffect(() => {
+    if (results) {
+      console.log('✅ Results updated:', {
+        mode: results.mode,
+        hasForwardPortfolio: !!results.forward_portfolio,
+        hasStrategy: !!results.strategy,
+        hasBenchmark: !!results.benchmark
+      });
+    }
+  }, [results]);
 
   return (
     <div className="App">
@@ -152,7 +175,7 @@ function App() {
           </div>
 
           {/* Walk-Forward Parameters */}
-          {useWalkForward && (
+          {(useWalkForward || usePredictive) && (
             <div className="config-panel walkforward-panel">
               <h3 className="panel-title">⚙️ Walk-Forward Configuration</h3>
               
@@ -367,9 +390,13 @@ function App() {
         </div>
 
         {results && (
-          results.mode === 'walkforward' || results.mode === 'predictive_ml' ? 
-            <WalkForwardResults data={results} /> :
-            <Results data={results} />
+          <div>
+            {console.log('🎨 Rendering component for mode:', results.mode)}
+            {(results.mode === 'walkforward' || results.mode === 'predictive_ml' || useWalkForward || usePredictive) ? 
+              <WalkForwardResults data={results} /> :
+              <Results data={results} />
+            }
+          </div>
         )}
       </main>
 
