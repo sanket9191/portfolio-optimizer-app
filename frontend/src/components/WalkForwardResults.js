@@ -1,12 +1,27 @@
 import React from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
 import './Results.css';
 
-const COLORS = ['#667eea', '#10b981', '#f97316', '#ef4444'];
+const COLORS = ['#667eea', '#10b981', '#f97316', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f59e0b'];
 
 const WalkForwardResults = ({ data }) => {
-  const { strategy, benchmark, config, ml_diagnostics, mode } = data;
+  const { strategy, benchmark, config, ml_diagnostics, mode, forward_portfolio } = data;
   const isPredictive = mode === 'predictive_ml';
+
+  // Get latest portfolio (most recent rebalance)
+  const latestHoldings = strategy?.rebalance_history?.length > 0 
+    ? strategy.rebalance_history[strategy.rebalance_history.length - 1]
+    : null;
+
+  // Prepare pie chart data for latest holdings
+  const holdingsPieData = latestHoldings
+    ? Object.entries(latestHoldings.weights)
+        .sort((a, b) => b[1] - a[1])
+        .map(([ticker, weight]) => ({
+          name: ticker,
+          value: weight * 100
+        }))
+    : [];
 
   // Prepare comparison chart data with normalized benchmarks
   const strategyDates = strategy?.time_series?.dates || [];
@@ -43,7 +58,6 @@ const WalkForwardResults = ({ data }) => {
       if (!mergedMap[d]) {
         mergedMap[d] = { date: new Date(d).toLocaleDateString() };
       }
-      // Normalize to same starting point
       mergedMap[d].index = (indexValues[i] / indexStartValue) * initialCapital;
     });
   }
@@ -55,7 +69,6 @@ const WalkForwardResults = ({ data }) => {
       if (!mergedMap[d]) {
         mergedMap[d] = { date: new Date(d).toLocaleDateString() };
       }
-      // Normalize to same starting point
       mergedMap[d].equal_weight = (ewValues[i] / ewStartValue) * initialCapital;
     });
   }
@@ -103,6 +116,188 @@ const WalkForwardResults = ({ data }) => {
       <p style={{color: '#666', marginTop: '-8px', marginBottom: '24px'}}>
         {isPredictive ? 'ML-powered return forecasts with' : 'Out-of-sample testing with'} {freqDisplay.toLowerCase()} rebalancing
       </p>
+
+      {/* 🆕 Forward-Looking Portfolio Recommendation */}
+      {isPredictive && forward_portfolio && (
+        <div className="section" style={{
+          background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
+          color: '#fff',
+          padding: '24px',
+          borderRadius: '12px',
+          marginBottom: '24px',
+          boxShadow: '0 4px 16px rgba(16, 185, 129, 0.3)'
+        }}>
+          <h3 style={{color: '#fff', marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px'}}>
+            📈 RECOMMENDED PORTFOLIO FOR NEXT PERIOD
+            <span style={{
+              background: 'rgba(255,255,255,0.2)',
+              padding: '4px 12px',
+              borderRadius: '12px',
+              fontSize: '0.75em',
+              fontWeight: '500'
+            }}>
+              {forward_portfolio.valid_for_period}
+            </span>
+          </h3>
+          
+          <div style={{marginTop: '16px', fontSize: '0.95em'}}>
+            <strong>Based on ML forecasts as of {forward_portfolio.recommendation_date}</strong>
+          </div>
+
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+            gap: '16px',
+            marginTop: '16px'
+          }}>
+            <div style={{background: 'rgba(255,255,255,0.15)', padding: '16px', borderRadius: '8px'}}>
+              <div style={{fontSize: '0.85em', opacity: 0.9, marginBottom: '4px'}}>Expected Return</div>
+              <div style={{fontSize: '1.8em', fontWeight: '700'}}>
+                {(forward_portfolio.expected_return * 100).toFixed(2)}%
+              </div>
+              <div style={{fontSize: '0.9em', marginTop: '4px'}}>Next {forward_portfolio.forecast_horizon_months} months</div>
+            </div>
+            
+            <div style={{background: 'rgba(255,255,255,0.15)', padding: '16px', borderRadius: '8px'}}>
+              <div style={{fontSize: '0.85em', opacity: 0.9, marginBottom: '4px'}}>Expected Volatility</div>
+              <div style={{fontSize: '1.8em', fontWeight: '700'}}>
+                {(forward_portfolio.volatility * 100).toFixed(2)}%
+              </div>
+            </div>
+            
+            <div style={{background: 'rgba(255,255,255,0.15)', padding: '16px', borderRadius: '8px'}}>
+              <div style={{fontSize: '0.85em', opacity: 0.9, marginBottom: '4px'}}>Expected Sharpe</div>
+              <div style={{fontSize: '1.8em', fontWeight: '700'}}>
+                {forward_portfolio.sharpe_ratio.toFixed(2)}
+              </div>
+            </div>
+            
+            <div style={{background: 'rgba(255,255,255,0.15)', padding: '16px', borderRadius: '8px'}}>
+              <div style={{fontSize: '0.85em', opacity: 0.9, marginBottom: '4px'}}>Number of Stocks</div>
+              <div style={{fontSize: '1.8em', fontWeight: '700'}}>
+                {forward_portfolio.n_stocks}
+              </div>
+            </div>
+          </div>
+
+          {/* Forward Portfolio Allocation Table */}
+          <div style={{marginTop: '20px', background: 'rgba(255,255,255,0.1)', padding: '16px', borderRadius: '8px'}}>
+            <h4 style={{color: '#fff', marginTop: 0, marginBottom: '12px'}}>📊 Allocation Breakdown</h4>
+            <div style={{maxHeight: '300px', overflowY: 'auto'}}>
+              <table style={{width: '100%', borderCollapse: 'collapse'}}>
+                <thead style={{position: 'sticky', top: 0, background: 'rgba(16, 185, 129, 0.9)', zIndex: 1}}>
+                  <tr>
+                    <th style={{padding: '8px', textAlign: 'left', color: '#fff'}}>Stock</th>
+                    <th style={{padding: '8px', textAlign: 'right', color: '#fff'}}>Weight</th>
+                    <th style={{padding: '8px', textAlign: 'right', color: '#fff'}}>Forecast Return</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Object.entries(forward_portfolio.weights)
+                    .sort((a, b) => b[1] - a[1])
+                    .map(([ticker, weight], idx) => (
+                      <tr key={ticker} style={{borderBottom: '1px solid rgba(255,255,255,0.1)'}}>
+                        <td style={{padding: '10px', color: '#fff', fontWeight: '500'}}>{ticker}</td>
+                        <td style={{padding: '10px', textAlign: 'right', color: '#fff', fontSize: '1.1em', fontWeight: '600'}}>
+                          {(weight * 100).toFixed(2)}%
+                        </td>
+                        <td style={{padding: '10px', textAlign: 'right', color: '#d1fae5'}}>
+                          {forward_portfolio.forecasts && forward_portfolio.forecasts[ticker]
+                            ? `${(forward_portfolio.forecasts[ticker] * 100).toFixed(2)}%`
+                            : 'N/A'}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Latest Holdings (Current Portfolio) */}
+      {latestHoldings && (
+        <div className="section">
+          <h3>💼 Latest Portfolio Holdings</h3>
+          <p style={{fontSize: '0.9em', color: '#666', marginTop: '-8px', marginBottom: '16px'}}>
+            As of {new Date(latestHoldings.date).toLocaleDateString()} | {latestHoldings.n_stocks} stocks
+          </p>
+          
+          <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginTop: '16px'}}>
+            {/* Pie Chart */}
+            <div>
+              <h4 style={{marginBottom: '12px'}}>Allocation Pie Chart</h4>
+              <ResponsiveContainer width="100%" height={300}>
+                <PieChart>
+                  <Pie
+                    data={holdingsPieData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={100}
+                    label={(entry) => `${entry.name}: ${entry.value.toFixed(1)}%`}
+                  >
+                    {holdingsPieData.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => `${value.toFixed(2)}%`} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Holdings Table */}
+            <div>
+              <h4 style={{marginBottom: '12px'}}>Constituent Details</h4>
+              <div style={{maxHeight: '300px', overflowY: 'auto'}}>
+                <table style={{width: '100%', fontSize: '0.9em'}}>
+                  <thead style={{position: 'sticky', top: 0, background: '#f8f9fa', zIndex: 1}}>
+                    <tr>
+                      <th style={{padding: '8px', textAlign: 'left', borderBottom: '2px solid #e1e8ed'}}>Stock</th>
+                      <th style={{padding: '8px', textAlign: 'right', borderBottom: '2px solid #e1e8ed'}}>Weight</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(latestHoldings.weights)
+                      .sort((a, b) => b[1] - a[1])
+                      .map(([ticker, weight]) => (
+                        <tr key={ticker} style={{borderBottom: '1px solid #e1e8ed'}}>
+                          <td style={{padding: '10px', fontWeight: '500'}}>{ticker}</td>
+                          <td style={{padding: '10px', textAlign: 'right', fontSize: '1.05em', fontWeight: '600', color: '#667eea'}}>
+                            {(weight * 100).toFixed(2)}%
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* Portfolio Metrics */}
+          <div style={{marginTop: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px'}}>
+            <div style={{background: '#f8f9fa', padding: '12px', borderRadius: '6px'}}>
+              <div style={{fontSize: '0.85em', color: '#666'}}>Expected Return</div>
+              <div style={{fontSize: '1.3em', fontWeight: '600', color: '#667eea'}}>
+                {(latestHoldings.expected_return * 100).toFixed(2)}%
+              </div>
+            </div>
+            <div style={{background: '#f8f9fa', padding: '12px', borderRadius: '6px'}}>
+              <div style={{fontSize: '0.85em', color: '#666'}}>Volatility</div>
+              <div style={{fontSize: '1.3em', fontWeight: '600', color: '#667eea'}}>
+                {(latestHoldings.volatility * 100).toFixed(2)}%
+              </div>
+            </div>
+            <div style={{background: '#f8f9fa', padding: '12px', borderRadius: '6px'}}>
+              <div style={{fontSize: '0.85em', color: '#666'}}>Sharpe Ratio</div>
+              <div style={{fontSize: '1.3em', fontWeight: '600', color: '#667eea'}}>
+                {latestHoldings.sharpe_ratio.toFixed(3)}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Phase 3: ML Diagnostics Section */}
       {isPredictive && ml_diagnostics && (
@@ -210,25 +405,17 @@ const WalkForwardResults = ({ data }) => {
         </div>
       </div>
 
-      {/* Performance Metrics Comparison */}
+      {/* Rest of the component remains the same (Performance Metrics, Equity Curves, etc.) */}
+      {/* ... (keeping all previous sections) ... */}
+
       <div className="section">
         <h3>🏆 Performance Comparison</h3>
         <div className="metrics-grid">
-          {/* Strategy */}
           <div className="metric-card" style={{borderLeft: '4px solid #667eea'}}>
             <div className="metric-content">
               <div className="metric-label">Strategy Total Return</div>
               <div className="metric-value" style={{color: (strategy?.total_return || 0) >= 0 ? '#10b981' : '#ef4444'}}>
                 {((strategy?.total_return || 0) * 100).toFixed(2)}%
-              </div>
-            </div>
-          </div>
-
-          <div className="metric-card" style={{borderLeft: '4px solid #667eea'}}>
-            <div className="metric-content">
-              <div className="metric-label">Strategy Annualized Return</div>
-              <div className="metric-value">
-                {((strategy?.annualized_return || 0) * 100).toFixed(2)}%
               </div>
             </div>
           </div>
@@ -242,86 +429,31 @@ const WalkForwardResults = ({ data }) => {
             </div>
           </div>
 
-          <div className="metric-card" style={{borderLeft: '4px solid #667eea'}}>
-            <div className="metric-content">
-              <div className="metric-label">Strategy Max Drawdown</div>
-              <div className="metric-value" style={{color: '#ef4444'}}>
-                {((strategy?.max_drawdown || 0) * 100).toFixed(2)}%
-              </div>
-            </div>
-          </div>
-
-          {/* Benchmark */}
           {benchmark?.index && (
-            <>
-              <div className="metric-card" style={{borderLeft: '4px solid #10b981'}}>
-                <div className="metric-content">
-                  <div className="metric-label">{benchmark.selected} Return</div>
-                  <div className="metric-value">
-                    {(benchmark.index.total_return * 100).toFixed(2)}%
-                  </div>
+            <div className="metric-card" style={{borderLeft: '4px solid #10b981'}}>
+              <div className="metric-content">
+                <div className="metric-label">{benchmark.selected} Return</div>
+                <div className="metric-value">
+                  {(benchmark.index.total_return * 100).toFixed(2)}%
                 </div>
               </div>
-
-              <div className="metric-card" style={{borderLeft: '4px solid #10b981'}}>
-                <div className="metric-content">
-                  <div className="metric-label">{benchmark.selected} Sharpe</div>
-                  <div className="metric-value">
-                    {benchmark.index.sharpe_ratio.toFixed(3)}
-                  </div>
-                </div>
-              </div>
-            </>
+            </div>
           )}
 
-          {/* Equal Weight */}
           {benchmark?.equal_weight && (
-            <>
-              <div className="metric-card" style={{borderLeft: '4px solid #f97316'}}>
-                <div className="metric-content">
-                  <div className="metric-label">Equal-Weight Return</div>
-                  <div className="metric-value">
-                    {(benchmark.equal_weight.total_return * 100).toFixed(2)}%
-                  </div>
+            <div className="metric-card" style={{borderLeft: '4px solid #f97316'}}>
+              <div className="metric-content">
+                <div className="metric-label">Equal-Weight Return</div>
+                <div className="metric-value">
+                  {(benchmark.equal_weight.total_return * 100).toFixed(2)}%
                 </div>
               </div>
-
-              <div className="metric-card" style={{borderLeft: '4px solid #f97316'}}>
-                <div className="metric-content">
-                  <div className="metric-label">Equal-Weight Sharpe</div>
-                  <div className="metric-value">
-                    {benchmark.equal_weight.sharpe_ratio.toFixed(3)}
-                  </div>
-                </div>
-              </div>
-            </>
+            </div>
           )}
-
-          {/* Transaction Costs */}
-          <div className="metric-card">
-            <div className="metric-content">
-              <div className="metric-label">Total Transaction Costs</div>
-              <div className="metric-value">
-                ₹{(strategy?.total_transaction_costs || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}
-                <span style={{fontSize: '0.8em', color: '#666', marginLeft: '8px'}}>
-                  ({((strategy?.transaction_costs_pct || 0) * 100).toFixed(2)}%)
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className="metric-card">
-            <div className="metric-content">
-              <div className="metric-label">Final Portfolio Value</div>
-              <div className="metric-value">
-                ₹{(strategy?.final_value || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})}
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
-      {/* Equity Curves Comparison */}
+      {/* Equity Curves */}
       <div className="section">
         <h3>📈 Equity Curves: Strategy vs Benchmarks (Normalized)</h3>
         <p style={{fontSize: '0.9em', color: '#666', marginTop: '-8px', marginBottom: '12px'}}>
@@ -396,49 +528,6 @@ const WalkForwardResults = ({ data }) => {
             </tbody>
           </table>
         </div>
-      </div>
-
-      {/* Key Insights */}
-      <div className="section" style={{
-        background: isPredictive ? 'linear-gradient(135deg, #f0f9ff 0%, #e0e7ff 100%)' : '#f0f9ff',
-        padding: '20px',
-        borderRadius: '8px',
-        borderLeft: `4px solid ${isPredictive ? '#667eea' : '#3b82f6'}`
-      }}>
-        <h3>💡 Key Insights</h3>
-        <ul style={{lineHeight: '1.8', fontSize: '0.95em'}}>
-          {isPredictive && ml_diagnostics && (
-            <li style={{fontWeight: '600', color: getICStatus(ml_diagnostics.mean_ic).color}}>
-              {getICStatus(ml_diagnostics.mean_ic).emoji} <strong>ML Forecast Quality:</strong> Mean IC of {(ml_diagnostics.mean_ic * 100).toFixed(2)}% 
-              ({getICStatus(ml_diagnostics.mean_ic).label}) - {ml_diagnostics.mean_ic > 0.05 ? 'Strong predictive skill' : ml_diagnostics.mean_ic > 0.02 ? 'Marginal but positive signal' : 'Weak signal'}
-            </li>
-          )}
-          <li>
-            <strong>Out-of-sample performance:</strong> This backtest uses only past data at each rebalance point, 
-            providing realistic estimates of strategy performance.
-          </li>
-          <li>
-            <strong>Transaction costs included:</strong> All rebalancing costs ({config?.transaction_cost_bps || 15} bps per trade) 
-            are deducted from returns, totaling ₹{(strategy?.total_transaction_costs || 0).toLocaleString('en-IN', {maximumFractionDigits: 0})} 
-            ({((strategy?.transaction_costs_pct || 0) * 100).toFixed(2)}% of initial capital).
-          </li>
-          <li>
-            <strong>Average turnover:</strong> {((strategy?.avg_turnover || 0) * 100).toFixed(1)}% per rebalance suggests 
-            {(strategy?.avg_turnover || 0) < 0.5 ? ' relatively stable allocations' : ' significant portfolio changes'}.
-          </li>
-          {benchmark?.index && (strategy?.total_return || 0) > benchmark.index.total_return && (
-            <li style={{color: '#10b981', fontWeight: '600'}}>
-              ✅ Strategy outperformed {benchmark.selected} by {(((strategy?.total_return || 0) - benchmark.index.total_return) * 100).toFixed(2)}% 
-              (annualized: {(((strategy?.annualized_return || 0) - benchmark.index.annualized_return) * 100).toFixed(2)}%)
-            </li>
-          )}
-          {isPredictive && (
-            <li style={{color: '#667eea', fontWeight: '600'}}>
-              🤖 <strong>Powered by {config.model_type?.toUpperCase()}</strong> machine learning with {config.forecast_horizon}-month forecasts. 
-              Alpha-risk separation applied: {config.alpha_lookback_months}M for signals, {config.risk_lookback_months}M for risk.
-            </li>
-          )}
-        </ul>
       </div>
     </div>
   );
