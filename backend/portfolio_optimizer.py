@@ -3,7 +3,7 @@ import pandas as pd
 from pypfopt import EfficientFrontier, risk_models, expected_returns
 from pypfopt.discrete_allocation import DiscreteAllocation
 
-def optimize_portfolio(stock_data, cluster_labels, risk_free_rate=0.05, min_weight=0.0, max_weight=0.25):
+def optimize_portfolio(stock_data, cluster_labels, risk_free_rate=0.05, min_weight=0.0, max_weight=0.17):
     """
     Optimize portfolio using Efficient Frontier (Max Sharpe Ratio)
     
@@ -12,7 +12,7 @@ def optimize_portfolio(stock_data, cluster_labels, risk_free_rate=0.05, min_weig
     - cluster_labels: Cluster assignments for each stock
     - risk_free_rate: Risk-free rate for Sharpe calculation
     - min_weight: Minimum weight per asset (default: 0.0)
-    - max_weight: Maximum weight per asset (default: 0.25 = 25%)
+    - max_weight: Maximum weight per asset (default: 0.17 = 17%, VP-approved conservative limit)
     
     Returns:
     - Dictionary with optimized weights, metrics, and allocation
