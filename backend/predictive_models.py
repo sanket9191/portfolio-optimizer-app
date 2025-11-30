@@ -404,27 +404,6 @@ class EnsembleAlphaModel:
         # Delegate to the first model's prepare_training_data method
         return self.models[0].prepare_training_data(features_df, price_df, rebalance_dates)
     
-    def train(self, X, y, dates):
-        """Train all models in ensemble."""
-        ics = []
-        
-        for i, model in enumerate(self.models):
-            print(f"\nTraining model {i+1}/{len(self.models)}: {model.model_type}")
-            
-            # Cross-validate
-            cv_results = model.train_with_cross_validation(X, y, dates)
-            ics.append(cv_results['mean_ic'])
-            
-            # Train on full data
-            model.train(X, y)
-        
-        # Set weights based on IC (if weighted ensemble)
-        if self.ensemble_method == 'weighted':
-            ic_array = np.array(ics)
-            ic_array = np.maximum(ic_array, 0)  # Only positive ICs get weight
-            self.weights = ic_array / ic_array.sum() if ic_array.sum() > 0 else np.ones(len(ics)) / len(ics)
-            print(f"\nEnsemble weights: {self.weights}")
-    
     def train_with_cross_validation(self, X, y, dates, n_splits=3):
         """Train ensemble with cross-validation and return aggregated results."""
         all_ics = []
@@ -438,6 +417,13 @@ class EnsembleAlphaModel:
             all_rmses.append(cv_results['mean_rmse'])
             all_r2s.append(cv_results['mean_r2'])
         
+        # Set weights based on IC (if weighted ensemble)
+        if self.ensemble_method == 'weighted':
+            ic_array = np.array(all_ics)
+            ic_array = np.maximum(ic_array, 0)  # Only positive ICs get weight
+            self.weights = ic_array / ic_array.sum() if ic_array.sum() > 0 else np.ones(len(all_ics)) / len(all_ics)
+            print(f"\nEnsemble weights (based on CV IC): {self.weights}")
+        
         # Return ensemble-level results
         ensemble_results = {
             'mean_ic': np.mean(all_ics),
@@ -449,6 +435,38 @@ class EnsembleAlphaModel:
         print(f"\n  Ensemble CV Results: IC={ensemble_results['mean_ic']:.4f}±{ensemble_results['std_ic']:.4f}")
         
         return ensemble_results
+    
+    def train(self, X, y):
+        """
+        Train all models in ensemble on full dataset.
+        
+        Parameters:
+        -----------
+        X : np.ndarray
+            Feature matrix
+        y : np.ndarray
+            Target returns
+        
+        Note: This method has the same signature as PredictiveAlphaModel.train()
+        to maintain API consistency.
+        """
+        ics = []
+        
+        for i, model in enumerate(self.models):
+            print(f"\nTraining model {i+1}/{len(self.models)}: {model.model_type} on full dataset")
+            ic = model.train(X, y)
+            ics.append(ic)
+        
+        # Update weights if using weighted ensemble (based on in-sample IC)
+        if self.ensemble_method == 'weighted' and self.weights is None:
+            ic_array = np.array(ics)
+            ic_array = np.maximum(ic_array, 0)  # Only positive ICs get weight
+            self.weights = ic_array / ic_array.sum() if ic_array.sum() > 0 else np.ones(len(ics)) / len(ics)
+            print(f"\nEnsemble weights (based on in-sample IC): {self.weights}")
+        
+        mean_ic = np.mean(ics)
+        print(f"\n  Ensemble trained. Mean in-sample IC: {mean_ic:.4f}")
+        return mean_ic
     
     def predict(self, X):
         """Generate ensemble predictions."""
