@@ -1,5 +1,5 @@
 import React from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import './Results.css';
 
 const COLORS = ['#667eea', '#10b981', '#f97316', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f59e0b'];
@@ -8,7 +8,7 @@ const WalkForwardResults = ({ data }) => {
   const { strategy, benchmark, config, ml_diagnostics, mode, forward_portfolio } = data;
   const isPredictive = mode === 'predictive_ml';
 
-  // Get latest portfolio (most recent rebalance)
+  // Get latest portfolio (most recent rebalance - HISTORICAL)
   const latestHoldings = strategy?.rebalance_history?.length > 0 
     ? strategy.rebalance_history[strategy.rebalance_history.length - 1]
     : null;
@@ -33,42 +33,28 @@ const WalkForwardResults = ({ data }) => {
   const ewDates = benchmark?.equal_weight?.time_series?.dates || [];
   const ewValues = benchmark?.equal_weight?.time_series?.values || [];
 
-  // Find common start date
-  const allDates = new Set([...strategyDates, ...indexDates, ...ewDates]);
-  const sortedDates = Array.from(allDates).sort();
-  const startDate = sortedDates.length > 0 ? sortedDates[0] : null;
-
-  // Normalize all series to start at same point (initial capital)
+  // Normalize all series to start at same point
   const initialCapital = strategyValues.length > 0 ? strategyValues[0] : 100000;
   
   const mergedMap = {};
   
-  // Add strategy values
   strategyDates.forEach((d, i) => {
-    if (!mergedMap[d]) {
-      mergedMap[d] = { date: new Date(d).toLocaleDateString() };
-    }
+    if (!mergedMap[d]) mergedMap[d] = { date: new Date(d).toLocaleDateString() };
     mergedMap[d].strategy = strategyValues[i];
   });
   
-  // Normalize and add index values
   if (indexDates.length > 0 && indexValues.length > 0) {
     const indexStartValue = indexValues[0];
     indexDates.forEach((d, i) => {
-      if (!mergedMap[d]) {
-        mergedMap[d] = { date: new Date(d).toLocaleDateString() };
-      }
+      if (!mergedMap[d]) mergedMap[d] = { date: new Date(d).toLocaleDateString() };
       mergedMap[d].index = (indexValues[i] / indexStartValue) * initialCapital;
     });
   }
   
-  // Normalize and add equal-weight values
   if (ewDates.length > 0 && ewValues.length > 0) {
     const ewStartValue = ewValues[0];
     ewDates.forEach((d, i) => {
-      if (!mergedMap[d]) {
-        mergedMap[d] = { date: new Date(d).toLocaleDateString() };
-      }
+      if (!mergedMap[d]) mergedMap[d] = { date: new Date(d).toLocaleDateString() };
       mergedMap[d].equal_weight = (ewValues[i] / ewStartValue) * initialCapital;
     });
   }
@@ -77,7 +63,6 @@ const WalkForwardResults = ({ data }) => {
     new Date(a.date) - new Date(b.date)
   );
 
-  // Prepare rebalancing timeline
   const rebalanceData = (strategy?.rebalance_history || []).map(r => ({
     date: new Date(r.date).toLocaleDateString(),
     n_stocks: r.n_stocks,
@@ -86,14 +71,12 @@ const WalkForwardResults = ({ data }) => {
     sharpe: r.sharpe_ratio.toFixed(3)
   }));
 
-  // Frequency display
   const freqDisplay = {
     'M': 'Monthly',
     'Q': 'Quarterly',
     'W': 'Weekly'
   }[config?.rebalance_freq] || config?.rebalance_freq || 'Monthly';
 
-  // IC interpretation
   const getICStatus = (ic) => {
     if (!ic) return { label: 'N/A', color: '#999', emoji: '❓' };
     if (ic > 0.10) return { label: 'Exceptional', color: '#10b981', emoji: '🏆' };
@@ -102,7 +85,6 @@ const WalkForwardResults = ({ data }) => {
     return { label: 'Poor', color: '#ef4444', emoji: '❌' };
   };
 
-  // Prepare IC history chart
   const icHistoryData = ml_diagnostics?.ic_history?.map(item => ({
     date: new Date(item.date).toLocaleDateString(),
     ic: item.ic ? (item.ic * 100).toFixed(2) : null
@@ -117,7 +99,30 @@ const WalkForwardResults = ({ data }) => {
         {isPredictive ? 'ML-powered return forecasts with' : 'Out-of-sample testing with'} {freqDisplay.toLowerCase()} rebalancing
       </p>
 
-      {/* 🆕 Forward-Looking Portfolio Recommendation */}
+      {/* Warning if forward portfolio is missing in predictive mode */}
+      {isPredictive && !forward_portfolio && (
+        <div className="section" style={{
+          background: '#fef3c7',
+          border: '2px solid #f59e0b',
+          padding: '16px',
+          borderRadius: '8px',
+          marginBottom: '24px'
+        }}>
+          <div style={{display: 'flex', alignItems: 'start', gap: '12px'}}>
+            <span style={{fontSize: '1.5em'}}>⚠️</span>
+            <div>
+              <strong style={{color: '#92400e'}}>Forward Portfolio Not Generated</strong>
+              <p style={{margin: '8px 0 0 0', color: '#78350f', fontSize: '0.95em'}}>
+                The ML model did not generate a forward-looking portfolio recommendation. 
+                This may be due to insufficient training data or model training failure. 
+                Check the console logs for details. You can still view the historical backtest results below.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🆕 Forward-Looking Portfolio Recommendation (ML PREDICTION FOR NEXT PERIOD) */}
       {isPredictive && forward_portfolio && (
         <div className="section" style={{
           background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)',
@@ -125,34 +130,39 @@ const WalkForwardResults = ({ data }) => {
           padding: '24px',
           borderRadius: '12px',
           marginBottom: '24px',
-          boxShadow: '0 4px 16px rgba(16, 185, 129, 0.3)'
+          boxShadow: '0 4px 16px rgba(16, 185, 129, 0.3)',
+          border: '3px solid #047857'
         }}>
-          <h3 style={{color: '#fff', marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px'}}>
-            📈 RECOMMENDED PORTFOLIO FOR NEXT PERIOD
+          <div style={{display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px'}}>
+            <h3 style={{color: '#fff', margin: 0, fontSize: '1.4em'}}>
+              📈 ML-PREDICTED PORTFOLIO FOR NEXT PERIOD
+            </h3>
             <span style={{
-              background: 'rgba(255,255,255,0.2)',
-              padding: '4px 12px',
-              borderRadius: '12px',
-              fontSize: '0.75em',
-              fontWeight: '500'
+              background: 'rgba(255,255,255,0.25)',
+              padding: '8px 16px',
+              borderRadius: '20px',
+              fontSize: '0.9em',
+              fontWeight: '600',
+              border: '2px solid rgba(255,255,255,0.4)'
             }}>
-              {forward_portfolio.valid_for_period}
+              Valid: {forward_portfolio.valid_for_period}
             </span>
-          </h3>
+          </div>
           
-          <div style={{marginTop: '16px', fontSize: '0.95em'}}>
-            <strong>Based on ML forecasts as of {forward_portfolio.recommendation_date}</strong>
+          <div style={{marginBottom: '16px', fontSize: '0.95em', background: 'rgba(255,255,255,0.1)', padding: '12px', borderRadius: '6px'}}>
+            <strong>🔮 This is your ACTIONABLE portfolio recommendation</strong> based on ML forecasts as of <strong>{forward_portfolio.recommendation_date}</strong>. 
+            Use these weights to invest for the next <strong>{forward_portfolio.forecast_horizon_months} months</strong>.
           </div>
 
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
             gap: '16px',
-            marginTop: '16px'
+            marginBottom: '20px'
           }}>
             <div style={{background: 'rgba(255,255,255,0.15)', padding: '16px', borderRadius: '8px'}}>
-              <div style={{fontSize: '0.85em', opacity: 0.9, marginBottom: '4px'}}>Expected Return</div>
-              <div style={{fontSize: '1.8em', fontWeight: '700'}}>
+              <div style={{fontSize: '0.85em', opacity: 0.9, marginBottom: '4px'}}>Forecasted Return</div>
+              <div style={{fontSize: '2em', fontWeight: '700'}}>
                 {(forward_portfolio.expected_return * 100).toFixed(2)}%
               </div>
               <div style={{fontSize: '0.9em', marginTop: '4px'}}>Next {forward_portfolio.forecast_horizon_months} months</div>
@@ -160,48 +170,48 @@ const WalkForwardResults = ({ data }) => {
             
             <div style={{background: 'rgba(255,255,255,0.15)', padding: '16px', borderRadius: '8px'}}>
               <div style={{fontSize: '0.85em', opacity: 0.9, marginBottom: '4px'}}>Expected Volatility</div>
-              <div style={{fontSize: '1.8em', fontWeight: '700'}}>
+              <div style={{fontSize: '2em', fontWeight: '700'}}>
                 {(forward_portfolio.volatility * 100).toFixed(2)}%
               </div>
             </div>
             
             <div style={{background: 'rgba(255,255,255,0.15)', padding: '16px', borderRadius: '8px'}}>
               <div style={{fontSize: '0.85em', opacity: 0.9, marginBottom: '4px'}}>Expected Sharpe</div>
-              <div style={{fontSize: '1.8em', fontWeight: '700'}}>
+              <div style={{fontSize: '2em', fontWeight: '700'}}>
                 {forward_portfolio.sharpe_ratio.toFixed(2)}
               </div>
             </div>
             
             <div style={{background: 'rgba(255,255,255,0.15)', padding: '16px', borderRadius: '8px'}}>
               <div style={{fontSize: '0.85em', opacity: 0.9, marginBottom: '4px'}}>Number of Stocks</div>
-              <div style={{fontSize: '1.8em', fontWeight: '700'}}>
+              <div style={{fontSize: '2em', fontWeight: '700'}}>
                 {forward_portfolio.n_stocks}
               </div>
             </div>
           </div>
 
           {/* Forward Portfolio Allocation Table */}
-          <div style={{marginTop: '20px', background: 'rgba(255,255,255,0.1)', padding: '16px', borderRadius: '8px'}}>
-            <h4 style={{color: '#fff', marginTop: 0, marginBottom: '12px'}}>📊 Allocation Breakdown</h4>
-            <div style={{maxHeight: '300px', overflowY: 'auto'}}>
+          <div style={{background: 'rgba(255,255,255,0.12)', padding: '16px', borderRadius: '8px'}}>
+            <h4 style={{color: '#fff', marginTop: 0, marginBottom: '12px', fontSize: '1.1em'}}>📊 Recommended Allocation</h4>
+            <div style={{maxHeight: '350px', overflowY: 'auto'}}>
               <table style={{width: '100%', borderCollapse: 'collapse'}}>
-                <thead style={{position: 'sticky', top: 0, background: 'rgba(16, 185, 129, 0.9)', zIndex: 1}}>
+                <thead style={{position: 'sticky', top: 0, background: 'rgba(5, 150, 105, 0.95)', zIndex: 1}}>
                   <tr>
-                    <th style={{padding: '8px', textAlign: 'left', color: '#fff'}}>Stock</th>
-                    <th style={{padding: '8px', textAlign: 'right', color: '#fff'}}>Weight</th>
-                    <th style={{padding: '8px', textAlign: 'right', color: '#fff'}}>Forecast Return</th>
+                    <th style={{padding: '10px', textAlign: 'left', color: '#fff', fontSize: '0.95em'}}>Stock</th>
+                    <th style={{padding: '10px', textAlign: 'right', color: '#fff', fontSize: '0.95em'}}>Target Weight</th>
+                    <th style={{padding: '10px', textAlign: 'right', color: '#fff', fontSize: '0.95em'}}>ML Forecast</th>
                   </tr>
                 </thead>
                 <tbody>
                   {Object.entries(forward_portfolio.weights)
                     .sort((a, b) => b[1] - a[1])
                     .map(([ticker, weight], idx) => (
-                      <tr key={ticker} style={{borderBottom: '1px solid rgba(255,255,255,0.1)'}}>
-                        <td style={{padding: '10px', color: '#fff', fontWeight: '500'}}>{ticker}</td>
-                        <td style={{padding: '10px', textAlign: 'right', color: '#fff', fontSize: '1.1em', fontWeight: '600'}}>
+                      <tr key={ticker} style={{borderBottom: '1px solid rgba(255,255,255,0.15)'}}>
+                        <td style={{padding: '12px', color: '#fff', fontWeight: '600', fontSize: '1.05em'}}>{ticker}</td>
+                        <td style={{padding: '12px', textAlign: 'right', color: '#fff', fontSize: '1.2em', fontWeight: '700'}}>
                           {(weight * 100).toFixed(2)}%
                         </td>
-                        <td style={{padding: '10px', textAlign: 'right', color: '#d1fae5'}}>
+                        <td style={{padding: '12px', textAlign: 'right', color: '#d1fae5', fontWeight: '500'}}>
                           {forward_portfolio.forecasts && forward_portfolio.forecasts[ticker]
                             ? `${(forward_portfolio.forecasts[ticker] * 100).toFixed(2)}%`
                             : 'N/A'}
@@ -215,16 +225,30 @@ const WalkForwardResults = ({ data }) => {
         </div>
       )}
 
-      {/* Latest Holdings (Current Portfolio) */}
+      {/* Latest Holdings (HISTORICAL - Last Backtest Rebalance) */}
       {latestHoldings && (
         <div className="section">
-          <h3>💼 Latest Portfolio Holdings</h3>
-          <p style={{fontSize: '0.9em', color: '#666', marginTop: '-8px', marginBottom: '16px'}}>
+          <div style={{display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px'}}>
+            <h3 style={{margin: 0}}>📜 {isPredictive ? 'Last Historical Rebalance' : 'Latest Portfolio Holdings'}</h3>
+            {isPredictive && (
+              <span style={{
+                background: '#e0e7ff',
+                color: '#4338ca',
+                padding: '4px 12px',
+                borderRadius: '12px',
+                fontSize: '0.75em',
+                fontWeight: '600'
+              }}>
+                Historical (Not Prediction)
+              </span>
+            )}
+          </div>
+          <p style={{fontSize: '0.9em', color: '#666', marginTop: '4px', marginBottom: '16px'}}>
             As of {new Date(latestHoldings.date).toLocaleDateString()} | {latestHoldings.n_stocks} stocks
+            {isPredictive && <strong style={{color: '#dc2626', marginLeft: '8px'}}>→ This is the last backtest rebalance, NOT your future recommendation</strong>}
           </p>
           
           <div style={{display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px', marginTop: '16px'}}>
-            {/* Pie Chart */}
             <div>
               <h4 style={{marginBottom: '12px'}}>Allocation Pie Chart</h4>
               <ResponsiveContainer width="100%" height={300}>
@@ -247,7 +271,6 @@ const WalkForwardResults = ({ data }) => {
               </ResponsiveContainer>
             </div>
 
-            {/* Holdings Table */}
             <div>
               <h4 style={{marginBottom: '12px'}}>Constituent Details</h4>
               <div style={{maxHeight: '300px', overflowY: 'auto'}}>
@@ -275,7 +298,6 @@ const WalkForwardResults = ({ data }) => {
             </div>
           </div>
 
-          {/* Portfolio Metrics */}
           <div style={{marginTop: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px'}}>
             <div style={{background: '#f8f9fa', padding: '12px', borderRadius: '6px'}}>
               <div style={{fontSize: '0.85em', color: '#666'}}>Expected Return</div>
@@ -299,7 +321,7 @@ const WalkForwardResults = ({ data }) => {
         </div>
       )}
 
-      {/* Phase 3: ML Diagnostics Section */}
+      {/* ML Diagnostics */}
       {isPredictive && ml_diagnostics && (
         <div className="section ml-diagnostics" style={{
           background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
@@ -364,7 +386,6 @@ const WalkForwardResults = ({ data }) => {
             )}
           </div>
 
-          {/* IC Over Time Chart */}
           {icHistoryData.length > 0 && (
             <div style={{marginTop: '24px', background: 'rgba(255,255,255,0.1)', padding: '16px', borderRadius: '8px'}}>
               <h4 style={{color: '#fff', marginTop: 0, marginBottom: '12px'}}>IC Over Time</h4>
@@ -405,9 +426,7 @@ const WalkForwardResults = ({ data }) => {
         </div>
       </div>
 
-      {/* Rest of the component remains the same (Performance Metrics, Equity Curves, etc.) */}
-      {/* ... (keeping all previous sections) ... */}
-
+      {/* Performance Metrics */}
       <div className="section">
         <h3>🏆 Performance Comparison</h3>
         <div className="metrics-grid">
