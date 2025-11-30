@@ -11,8 +11,10 @@ function App() {
     startDate: '2020-01-01',
     endDate: new Date().toISOString().split('T')[0],
     nClusters: 4,
-    riskFreeRate: 0.05
+    riskFreeRate: 0.05,
+    initialCapital: 100000
   });
+  const [benchmark, setBenchmark] = useState('NIFTY50');
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -33,7 +35,10 @@ function App() {
         start_date: parameters.startDate,
         end_date: parameters.endDate,
         n_clusters: parameters.nClusters,
-        risk_free_rate: parameters.riskFreeRate
+        risk_free_rate: parameters.riskFreeRate,
+        initial_capital: parameters.initialCapital,
+        benchmark: benchmark,
+        max_weight: 0.25
       });
 
       setResults(data);
@@ -62,6 +67,21 @@ function App() {
             parameters={parameters}
             onParametersChange={setParameters}
           />
+
+          <div className="form-group">
+            <label className="form-label">
+              📊 Benchmark
+              <select
+                value={benchmark}
+                onChange={e => setBenchmark(e.target.value)}
+                className="form-select"
+              >
+                <option value="NIFTY50">NIFTY 50</option>
+                <option value="NIFTYBANK">NIFTY Bank</option>
+                <option value="NIFTY500">NIFTY 500</option>
+              </select>
+            </label>
+          </div>
 
           <button 
             className="optimize-button"
