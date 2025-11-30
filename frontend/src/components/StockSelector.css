@@ -1,0 +1,117 @@
+.stock-selector {
+  margin-bottom: 2rem;
+}
+
+.stock-selector h2 {
+  color: #333;
+  margin-bottom: 1rem;
+  font-size: 1.5rem;
+}
+
+.index-buttons {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.index-buttons button {
+  flex: 1;
+  padding: 0.8rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #667eea;
+  background: white;
+  border: 2px solid #667eea;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.index-buttons button:hover {
+  background: #667eea;
+  color: white;
+}
+
+.index-buttons button.active {
+  background: #667eea;
+  color: white;
+}
+
+.custom-ticker-input {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.custom-ticker-input input {
+  flex: 1;
+  padding: 0.8rem;
+  font-size: 1rem;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  transition: border-color 0.2s;
+}
+
+.custom-ticker-input input:focus {
+  outline: none;
+  border-color: #667eea;
+}
+
+.custom-ticker-input button {
+  padding: 0.8rem 1.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: white;
+  background: #667eea;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.custom-ticker-input button:hover {
+  background: #5568d3;
+}
+
+.selected-tickers h3 {
+  color: #555;
+  font-size: 1.1rem;
+  margin-bottom: 0.8rem;
+}
+
+.ticker-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.ticker-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.8rem;
+  background: #f0f4ff;
+  border: 1px solid #667eea;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  color: #667eea;
+}
+
+.ticker-chip button {
+  background: none;
+  border: none;
+  color: #667eea;
+  font-size: 1.3rem;
+  cursor: pointer;
+  padding: 0;
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: color 0.2s;
+}
+
+.ticker-chip button:hover {
+  color: #d00;
+}
