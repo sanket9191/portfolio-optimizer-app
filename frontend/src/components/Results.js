@@ -8,11 +8,12 @@ const Results = ({ data }) => {
   const { clusters, portfolio, backtest } = data;
 
   // Prepare portfolio allocation data for pie chart
-  const allocationData = Object.entries(portfolio.weights).map(([ticker, weight]) => ({
-    name: ticker,
-    value: (weight * 100).toFixed(2),
-    weight: weight
-  }));
+const allocationData = Object.entries(portfolio.weights).map(([ticker, weight]) => ({
+  name: ticker,
+  value: parseFloat((weight * 100).toFixed(2)),  // Convert to number!
+  weight: weight
+}));
+
 
   // Prepare time series data
   const timeSeriesData = backtest.time_series.dates.map((date, index) => ({
@@ -100,28 +101,30 @@ const Results = ({ data }) => {
       </div>
 
       {/* Portfolio Allocation Pie Chart */}
-      <div className="section">
-        <h3>🍰 Portfolio Allocation</h3>
-        <ResponsiveContainer width="100%" height={400}>
-          <PieChart>
-            <Pie
-              data={allocationData}
-              cx="50%"
-              cy="50%"
-              labelLine={false}
-              label={({ name, value }) => `${name}: ${value}%`}
-              outerRadius={120}
-              fill="#8884d8"
-              dataKey="value"
-            >
-              {allocationData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-              ))}
-            </Pie>
-            <Tooltip />
-          </PieChart>
-        </ResponsiveContainer>
-      </div>
+<div className="section">
+  <h3>🍰 Portfolio Allocation</h3>
+  <ResponsiveContainer width="100%" height={400}>
+    <PieChart>
+      <Pie
+        data={allocationData}
+        cx="50%"
+        cy="50%"
+        labelLine={true}
+        label={({ name, value }) => `${name.split('.')[0]}: ${parseFloat(value).toFixed(1)}%`}
+        outerRadius={120}
+        fill="#8884d8"
+        dataKey="value"
+      >
+        {allocationData.map((entry, index) => (
+          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+        ))}
+      </Pie>
+      <Tooltip formatter={(value) => `${parseFloat(value).toFixed(2)}%`} />
+      <Legend />
+    </PieChart>
+  </ResponsiveContainer>
+</div>
+
 
       {/* Portfolio Value Over Time */}
       <div className="section">

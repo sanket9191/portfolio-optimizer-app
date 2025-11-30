@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
-import pandas_ta
+from ta.momentum import RSIIndicator
+from ta.volatility import BollingerBands, AverageTrueRange
+from ta.trend import MACD
 
 def calculate_features(df):
     """
@@ -19,37 +21,60 @@ def calculate_features(df):
     )
     
     print("Calculating RSI...")
-    df['rsi'] = df.groupby(level=1)['adj close'].transform(
-        lambda x: pandas_ta.rsi(close=x, length=20)
-    )
+    def calc_rsi(x):
+        try:
+            rsi = RSIIndicator(close=x, window=20)
+            return rsi.rsi()
+        except:
+            return pd.Series(index=x.index, dtype=float)
+    
+    df['rsi'] = df.groupby(level=1)['adj close'].transform(calc_rsi)
     
     print("Calculating Bollinger Bands...")
-    df['bb_low'] = df.groupby(level=1)['adj close'].transform(
-        lambda x: pandas_ta.bbands(close=np.log1p(x), length=20).iloc[:,0]
-    )
-    df['bb_mid'] = df.groupby(level=1)['adj close'].transform(
-        lambda x: pandas_ta.bbands(close=np.log1p(x), length=20).iloc[:,1]
-    )
-    df['bb_high'] = df.groupby(level=1)['adj close'].transform(
-        lambda x: pandas_ta.bbands(close=np.log1p(x), length=20).iloc[:,2]
-    )
+    def calc_bollinger(x):
+        try:
+            bb = BollingerBands(close=np.log1p(x), window=20, window_dev=2)
+            return pd.DataFrame({
+                'bb_low': bb.bollinger_lband(),
+                'bb_mid': bb.bollinger_mavg(),
+                'bb_high': bb.bollinger_hband()
+            })
+        except:
+            return pd.DataFrame({
+                'bb_low': pd.Series(index=x.index, dtype=float),
+                'bb_mid': pd.Series(index=x.index, dtype=float),
+                'bb_high': pd.Series(index=x.index, dtype=float)
+            })
+    
+    bb_data = df.groupby(level=1)['adj close'].apply(calc_bollinger)
+    df['bb_low'] = bb_data['bb_low'].values
+    df['bb_mid'] = bb_data['bb_mid'].values
+    df['bb_high'] = bb_data['bb_high'].values
     
     print("Calculating ATR...")
     def compute_atr(stock_data):
-        atr = pandas_ta.atr(
-            high=stock_data['high'],
-            low=stock_data['low'],
-            close=stock_data['close'],
-            length=14
-        )
-        return atr.sub(atr.mean()).div(atr.std())
+        try:
+            atr_indicator = AverageTrueRange(
+                high=stock_data['high'],
+                low=stock_data['low'],
+                close=stock_data['close'],
+                window=14
+            )
+            atr = atr_indicator.average_true_range()
+            return atr.sub(atr.mean()).div(atr.std())
+        except:
+            return pd.Series(index=stock_data.index, dtype=float)
     
     df['atr'] = df.groupby(level=1, group_keys=False).apply(compute_atr)
     
     print("Calculating MACD...")
     def compute_macd(close):
-        macd = pandas_ta.macd(close=close, length=20).iloc[:,0]
-        return macd.sub(macd.mean()).div(macd.std())
+        try:
+            macd = MACD(close=close, window_slow=26, window_fast=12, window_sign=9)
+            macd_line = macd.macd()
+            return macd_line.sub(macd_line.mean()).div(macd_line.std())
+        except:
+            return pd.Series(index=close.index, dtype=float)
     
     df['macd'] = df.groupby(level=1, group_keys=False)['adj close'].apply(compute_macd)
     
