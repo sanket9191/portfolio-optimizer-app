@@ -1,6 +1,8 @@
 import React from 'react';
 import './ParameterInputs.css';
 
+// Removed invalid useState call
+
 const ParameterInputs = ({ parameters, onParametersChange }) => {
   const handleChange = (field, value) => {
     onParametersChange({

@@ -16,6 +16,7 @@ function App() {
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [benchmark, setBenchmark] = useState("NIFTY50");
 
   const handleOptimize = async () => {
     if (tickers.length < 5) {
@@ -33,7 +34,9 @@ function App() {
         start_date: parameters.startDate,
         end_date: parameters.endDate,
         n_clusters: parameters.nClusters,
-        risk_free_rate: parameters.riskFreeRate
+        risk_free_rate: parameters.riskFreeRate,
+        benchmark, // NEW
+        max_weight: 0.25 // NEW (static for now)
       });
 
       setResults(data);
@@ -51,6 +54,7 @@ function App() {
         <p>Adaptive Portfolio Optimization via Unsupervised Learning</p>
       </header>
 
+
       <main className="App-main">
         <div className="input-section">
           <StockSelector 
@@ -62,6 +66,20 @@ function App() {
             parameters={parameters}
             onParametersChange={setParameters}
           />
+
+          <label className="form-label">
+            Benchmark
+            <select
+              value={benchmark}
+              onChange={e => setBenchmark(e.target.value)}
+              className="form-select"
+            >
+              <option value="NIFTY50">NIFTY 50</option>
+              <option value="NIFTYBANK">NIFTY Bank</option>
+              <option value="NIFTY500">NIFTY 500</option>
+              <option value="EQUAL_WEIGHT">Equal-weight universe</option>
+            </select>
+          </label>
 
           <button 
             className="optimize-button"

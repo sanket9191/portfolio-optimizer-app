@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { getIndexTickers } from '../api';
 import './StockSelector.css';
+const [benchmark, setBenchmark] = useState("NIFTY50");
 
 const StockSelector = ({ selectedTickers, onTickersChange }) => {
   const [customTicker, setCustomTicker] = useState('');
@@ -15,7 +16,7 @@ const StockSelector = ({ selectedTickers, onTickersChange }) => {
       console.error('Error loading index:', error);
     }
   };
-
+  // Removed invalid useState call
   const handleAddCustomTicker = () => {
     if (customTicker.trim()) {
       const ticker = customTicker.trim().toUpperCase();
