@@ -383,6 +383,27 @@ class EnsembleAlphaModel:
         
         print(f"\nInitialized ensemble with {len(self.models)} models")
     
+    def prepare_training_data(self, features_df, price_df, rebalance_dates):
+        """
+        Prepare training data using the first model's method.
+        All models in ensemble use the same training data.
+        
+        Parameters:
+        -----------
+        features_df : pd.DataFrame
+            Technical features with (date, ticker) multi-index
+        price_df : pd.DataFrame
+            Price data (wide format: dates x tickers)
+        rebalance_dates : pd.DatetimeIndex
+            Dates at which we compute features and need predictions
+        
+        Returns:
+        --------
+        X, y, dates, tickers : Training data components
+        """
+        # Delegate to the first model's prepare_training_data method
+        return self.models[0].prepare_training_data(features_df, price_df, rebalance_dates)
+    
     def train(self, X, y, dates):
         """Train all models in ensemble."""
         ics = []
@@ -404,6 +425,31 @@ class EnsembleAlphaModel:
             self.weights = ic_array / ic_array.sum() if ic_array.sum() > 0 else np.ones(len(ics)) / len(ics)
             print(f"\nEnsemble weights: {self.weights}")
     
+    def train_with_cross_validation(self, X, y, dates, n_splits=3):
+        """Train ensemble with cross-validation and return aggregated results."""
+        all_ics = []
+        all_rmses = []
+        all_r2s = []
+        
+        for i, model in enumerate(self.models):
+            print(f"\nCross-validating model {i+1}/{len(self.models)}: {model.model_type}")
+            cv_results = model.train_with_cross_validation(X, y, dates, n_splits)
+            all_ics.append(cv_results['mean_ic'])
+            all_rmses.append(cv_results['mean_rmse'])
+            all_r2s.append(cv_results['mean_r2'])
+        
+        # Return ensemble-level results
+        ensemble_results = {
+            'mean_ic': np.mean(all_ics),
+            'std_ic': np.std(all_ics),
+            'mean_rmse': np.mean(all_rmses),
+            'mean_r2': np.mean(all_r2s)
+        }
+        
+        print(f"\n  Ensemble CV Results: IC={ensemble_results['mean_ic']:.4f}±{ensemble_results['std_ic']:.4f}")
+        
+        return ensemble_results
+    
     def predict(self, X):
         """Generate ensemble predictions."""
         predictions = np.array([model.predict(X) for model in self.models])
@@ -416,3 +462,27 @@ class EnsembleAlphaModel:
             return (predictions.T @ self.weights).flatten()
         else:
             return predictions.mean(axis=0)
+    
+    def get_feature_importance(self, feature_names=None, top_n=10):
+        """Aggregate feature importance across all models."""
+        # Get feature importance from models that support it
+        importance_list = []
+        for model in self.models:
+            if model.feature_importance is not None:
+                importance_list.append(model.feature_importance)
+        
+        if len(importance_list) == 0:
+            return None
+        
+        # Average importance across models
+        avg_importance = np.mean(importance_list, axis=0)
+        
+        if feature_names is None:
+            feature_names = [f"Feature_{i}" for i in range(len(avg_importance))]
+        
+        importance_df = pd.DataFrame({
+            'feature': feature_names,
+            'importance': avg_importance
+        }).sort_values('importance', ascending=False)
+        
+        return importance_df.head(top_n)
