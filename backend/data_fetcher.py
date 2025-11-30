@@ -63,13 +63,21 @@ def fetch_benchmark_data(benchmark_name, start_date, end_date):
     print(f"Fetching benchmark {benchmark_name} ({ticker}) from {start_date} to {end_date}...")
 
     try:
-        data = yf.download(ticker, start=start_date, end=end_date, progress=False)
+        data = yf.download(ticker, start=start_date, end=end_date, progress=False, auto_adjust=False)
         if data.empty:
             print(f"No data for benchmark {benchmark_name}")
             return None
 
-        data = data[['Adj Close']].rename(columns={'Adj Close': 'adj_close'})
+        # Handle both single ticker (Series) and multi-ticker (DataFrame) cases
+        if 'Adj Close' in data.columns:
+            data = data[['Adj Close']].copy()
+            data.columns = ['adj_close']
+        else:
+            print(f"Available columns: {data.columns.tolist()}")
+            return None
+            
         data.index.name = 'date'
+        print(f"Successfully fetched {len(data)} data points for {benchmark_name}")
         return data
     except Exception as e:
         print(f"Error fetching benchmark data: {str(e)}")
