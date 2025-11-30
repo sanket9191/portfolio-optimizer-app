@@ -167,6 +167,8 @@ class WalkForwardEngine:
             
         except Exception as e:
             print(f"  ❌ Optimization failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def calculate_transaction_costs(self, old_weights, new_weights, portfolio_value):
@@ -198,7 +200,7 @@ class WalkForwardEngine:
         
         Returns:
         --------
-        pd.Series : Daily portfolio values indexed by date
+        pd.Series : Daily portfolio returns indexed by date
         """
         # Get price data for the period
         mask = (
@@ -329,7 +331,12 @@ class WalkForwardEngine:
             # Update current weights
             current_weights = new_weights
         
-        # Build results
+        # Build results - HANDLE EMPTY EQUITY CURVE
+        if not equity_curve:
+            print("\n⚠️  WARNING: No equity curve data generated (all optimizations failed)")
+            return self._empty_metrics()
+        
+        # Create DataFrame from equity curve
         equity_df = pd.DataFrame(equity_curve).set_index('date')['value']
         
         # Calculate performance metrics
@@ -359,6 +366,9 @@ class WalkForwardEngine:
         """
         Calculate comprehensive performance metrics.
         """
+        if equity_curve.empty:
+            return self._empty_metrics()
+        
         initial_capital = self.config['initial_capital']
         final_value = equity_curve.iloc[-1]
         total_return = (final_value / initial_capital) - 1.0
@@ -373,7 +383,7 @@ class WalkForwardEngine:
         n_days = len(daily_returns)
         n_years = n_days / 252.0
         
-        annualized_return = (1 + total_return) ** (1 / n_years) - 1
+        annualized_return = (1 + total_return) ** (1 / n_years) - 1 if n_years > 0 else 0.0
         annualized_vol = daily_returns.std() * np.sqrt(252)
         
         # Sharpe ratio
@@ -399,7 +409,7 @@ class WalkForwardEngine:
             'volatility': float(annualized_vol),
             'sharpe_ratio': float(sharpe_annualized),
             'max_drawdown': float(max_drawdown),
-            'n_rebalances': len(rebalance_records),
+            'num_rebalances': len(rebalance_records),
             'total_transaction_costs': float(total_txn_costs),
             'transaction_costs_pct': float(total_txn_costs / initial_capital),
             'avg_turnover': float(avg_turnover),
@@ -407,11 +417,19 @@ class WalkForwardEngine:
                 'dates': [d.strftime('%Y-%m-%d') for d in equity_curve.index],
                 'portfolio_values': [float(v) for v in equity_curve.values]
             },
-            'rebalance_history': rebalance_records
+            'rebalance_history': rebalance_records,
+            'metrics': {  # Add nested metrics for easier access
+                'total_return': float(total_return),
+                'annualized_return': float(annualized_return),
+                'volatility': float(annualized_vol),
+                'sharpe_ratio': float(sharpe_annualized),
+                'max_drawdown': float(max_drawdown),
+                'num_rebalances': len(rebalance_records)
+            }
         }
     
     def _empty_metrics(self):
-        """Return empty metrics structure."""
+        """Return empty metrics structure when backtest fails."""
         return {
             'initial_capital': self.config['initial_capital'],
             'final_value': self.config['initial_capital'],
@@ -420,10 +438,18 @@ class WalkForwardEngine:
             'volatility': 0.0,
             'sharpe_ratio': 0.0,
             'max_drawdown': 0.0,
-            'n_rebalances': 0,
+            'num_rebalances': 0,
             'total_transaction_costs': 0.0,
             'transaction_costs_pct': 0.0,
             'avg_turnover': 0.0,
             'time_series': {'dates': [], 'portfolio_values': []},
-            'rebalance_history': []
+            'rebalance_history': [],
+            'metrics': {
+                'total_return': 0.0,
+                'annualized_return': 0.0,
+                'volatility': 0.0,
+                'sharpe_ratio': 0.0,
+                'max_drawdown': 0.0,
+                'num_rebalances': 0
+            }
         }
