@@ -2,11 +2,16 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 import sys
 import traceback
-from data_fetcher import fetch_stock_data
+from data_fetcher import fetch_stock_data, fetch_benchmark_data
 from feature_engineering import calculate_features
 from clustering import perform_clustering
 from portfolio_optimizer import optimize_portfolio
 from backtesting import backtest_strategy
+from benchmark_utils import (
+    compute_equity_curve_from_prices,
+    compute_performance_metrics,
+    compute_equal_weight_benchmark,
+)
 
 app = Flask(__name__)
 CORS(app)
@@ -26,6 +31,9 @@ def optimize():
         end_date = data.get('end_date')
         n_clusters = data.get('n_clusters', 4)
         risk_free_rate = data.get('risk_free_rate', 0.05)
+        initial_capital = data.get('initial_capital', 100000)
+        benchmark_name = data.get('benchmark', 'NIFTY50')
+        max_weight = float(data.get('max_weight', 0.25))
         
         if not tickers or not start_date or not end_date:
             return jsonify({"error": "Missing required parameters"}), 400
@@ -45,26 +53,62 @@ def optimize():
         print(f"Performing K-means clustering with {n_clusters} clusters...")
         cluster_results = perform_clustering(features_df, n_clusters)
         
-        # Step 4: Optimize portfolio
+        # Step 4: Build price DataFrame for optimization
+        price_df = stock_data['adj close'].unstack('ticker').dropna()
+        
+        # Step 5: Optimize portfolio with weight constraints
         print("Optimizing portfolio...")
         portfolio_results = optimize_portfolio(
             stock_data, 
             cluster_results['labels'], 
-            risk_free_rate
+            risk_free_rate=risk_free_rate,
+            min_weight=0.0,
+            max_weight=max_weight
         )
         
-        # Step 5: Backtest
+        # Step 6: Backtest
         print("Backtesting strategy...")
         backtest_results = backtest_strategy(
             stock_data, 
-            portfolio_results['weights']
+            portfolio_results['weights'],
+            initial_capital=initial_capital
         )
+        
+        # Step 7: Compute index benchmark
+        benchmark_metrics = None
+        if benchmark_name in ["NIFTY50", "NIFTYBANK", "NIFTY500"]:
+            print(f"Fetching {benchmark_name} benchmark...")
+            benchmark_data = fetch_benchmark_data(benchmark_name, start_date, end_date)
+            if benchmark_data is not None:
+                benchmark_equity = compute_equity_curve_from_prices(
+                    benchmark_data['adj_close'],
+                    initial_capital
+                )
+                benchmark_metrics = compute_performance_metrics(
+                    benchmark_equity,
+                    risk_free_rate_annual=risk_free_rate
+                )
+        
+        # Step 8: Compute equal-weight benchmark
+        print("Computing equal-weight benchmark...")
+        equal_weight_metrics = None
+        equal_weight_equity = compute_equal_weight_benchmark(price_df, initial_capital)
+        if equal_weight_equity is not None:
+            equal_weight_metrics = compute_performance_metrics(
+                equal_weight_equity,
+                risk_free_rate_annual=risk_free_rate
+            )
         
         response = {
             "success": True,
             "clusters": cluster_results,
             "portfolio": portfolio_results,
             "backtest": backtest_results,
+            "benchmark": {
+                "selected": benchmark_name,
+                "index": benchmark_metrics,
+                "equal_weight": equal_weight_metrics
+            },
             "message": "Portfolio optimization completed successfully"
         }
         
