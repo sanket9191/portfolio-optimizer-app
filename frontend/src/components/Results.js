@@ -24,7 +24,6 @@ const COLORS = [
   "#fa709a",
   "#fee140",
 ];
-const [benchmark, setBenchmark] = useState("NIFTY50");
 
 const Results = ({ data }) => {
   const { clusters, portfolio, backtest, benchmark } = data;
@@ -33,7 +32,7 @@ const Results = ({ data }) => {
   const allocationData = Object.entries(portfolio.weights).map(
     ([ticker, weight]) => ({
       name: ticker,
-      value: parseFloat((weight * 100).toFixed(2)), // Convert to number!
+      value: parseFloat((weight * 100).toFixed(2)),
       weight: weight,
     })
   );
@@ -43,6 +42,44 @@ const Results = ({ data }) => {
     date: new Date(date).toLocaleDateString(),
     value: backtest.time_series.portfolio_values[index],
   }));
+
+  // Prepare benchmark comparison data
+  const indexSeries = benchmark && benchmark.index ? benchmark.index.time_series : null;
+  const equalWeightSeries = benchmark && benchmark.equal_weight ? benchmark.equal_weight.time_series : null;
+  const strategySeries = backtest.time_series;
+
+  const mergedMap = {};
+
+  strategySeries.dates.forEach((d, i) => {
+    mergedMap[d] = mergedMap[d] || {};
+    mergedMap[d].date = d;
+    mergedMap[d].strategy = strategySeries.portfolio_values[i];
+  });
+
+  if (indexSeries) {
+    indexSeries.dates.forEach((d, i) => {
+      mergedMap[d] = mergedMap[d] || {};
+      mergedMap[d].date = d;
+      mergedMap[d].index = indexSeries.values[i];
+    });
+  }
+
+  if (equalWeightSeries) {
+    equalWeightSeries.dates.forEach((d, i) => {
+      mergedMap[d] = mergedMap[d] || {};
+      mergedMap[d].date = d;
+      mergedMap[d].equal_weight = equalWeightSeries.values[i];
+    });
+  }
+
+  const comparisonData = Object.values(mergedMap)
+    .sort((a, b) => new Date(a.date) - new Date(b.date))
+    .map(row => ({
+      date: new Date(row.date).toLocaleDateString(),
+      strategy: row.strategy,
+      index: row.index,
+      equal_weight: row.equal_weight
+    }));
 
   return (
     <div className="results">
@@ -102,7 +139,7 @@ const Results = ({ data }) => {
                   color: backtest.total_return >= 0 ? "#10b981" : "#ef4444",
                 }}
               >
-              // Removed invalid useState call
+                {(backtest.total_return * 100).toFixed(2)}%
               </div>
             </div>
           </div>
@@ -199,80 +236,80 @@ const Results = ({ data }) => {
         </ResponsiveContainer>
       </div>
 
-<div className="section">
-  <h3>📊 Strategy vs Benchmark</h3>
-  <div className="metrics-grid">
-    {benchmark && benchmark.index && (
-      <div className="metric-card">
-        <div className="metric-content">
-          <div className="metric-label">
-            Index ({benchmark.selected}) Total Return
-          </div>
-          <div className="metric-value">
-            {(benchmark.index.total_return * 100).toFixed(2)}%
-          </div>
+      {/* Strategy vs Benchmark */}
+      <div className="section">
+        <h3>📊 Strategy vs Benchmark</h3>
+        <div className="metrics-grid">
+          {benchmark && benchmark.index && (
+            <div className="metric-card">
+              <div className="metric-content">
+                <div className="metric-label">
+                  Index ({benchmark.selected}) Total Return
+                </div>
+                <div className="metric-value">
+                  {(benchmark.index.total_return * 100).toFixed(2)}%
+                </div>
+              </div>
+            </div>
+          )}
+          {benchmark && benchmark.equal_weight && (
+            <div className="metric-card">
+              <div className="metric-content">
+                <div className="metric-label">
+                  Equal-Weight Portfolio Total Return
+                </div>
+                <div className="metric-value">
+                  {(benchmark.equal_weight.total_return * 100).toFixed(2)}%
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-      </div>
-    )}
-    {benchmark && benchmark.equal_weight && (
-      <div className="metric-card">
-        <div className="metric-content">
-          <div className="metric-label">
-            Equal-Weight Portfolio Total Return
-          </div>
-          <div className="metric-value">
-            {(benchmark.equal_weight.total_return * 100).toFixed(2)}%
-          </div>
-        </div>
-      </div>
-    )}
-  </div>
 
-  <ResponsiveContainer width="100%" height={400}>
-    <LineChart data={comparisonData}>
-      <CartesianGrid strokeDasharray="3 3" />
-      <XAxis dataKey="date" />
-      <YAxis />
-      <Tooltip
-        formatter={value =>
-          value
-            ? `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
-            : '-'
-        }
-      />
-      <Legend />
-      <Line
-        type="monotone"
-        dataKey="strategy"
-        stroke="#667eea"
-        strokeWidth={2}
-        name="Strategy"
-        dot={false}
-      />
-      {indexSeries && (
-        <Line
-          type="monotone"
-          dataKey="index"
-          stroke="#10b981"
-          strokeWidth={2}
-          name={`Index (${benchmark.selected})`}
-          dot={false}
-        />
-      )}
-      {equalWeightSeries && (
-        <Line
-          type="monotone"
-          dataKey="equal_weight"
-          stroke="#f97316"
-          strokeWidth={2}
-          name="Equal-weight"
-          dot={false}
-        />
-      )}
-    </LineChart>
-  </ResponsiveContainer>
-</div>
-
+        <ResponsiveContainer width="100%" height={400}>
+          <LineChart data={comparisonData}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis dataKey="date" />
+            <YAxis />
+            <Tooltip
+              formatter={value =>
+                value
+                  ? `₹${value.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`
+                  : '-'
+              }
+            />
+            <Legend />
+            <Line
+              type="monotone"
+              dataKey="strategy"
+              stroke="#667eea"
+              strokeWidth={2}
+              name="Strategy"
+              dot={false}
+            />
+            {indexSeries && (
+              <Line
+                type="monotone"
+                dataKey="index"
+                stroke="#10b981"
+                strokeWidth={2}
+                name={`Index (${benchmark.selected})`}
+                dot={false}
+              />
+            )}
+            {equalWeightSeries && (
+              <Line
+                type="monotone"
+                dataKey="equal_weight"
+                stroke="#f97316"
+                strokeWidth={2}
+                name="Equal-weight"
+                dot={false}
+              />
+            )}
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
 
       {/* Cluster Information */}
       <div className="section">
@@ -348,43 +385,6 @@ const Results = ({ data }) => {
       </div>
     </div>
   );
-  const indexSeries = benchmark && benchmark.index ? benchmark.index.time_series : null;
-const equalWeightSeries = benchmark && benchmark.equal_weight ? benchmark.equal_weight.time_series : null;
-const strategySeries = backtest.time_series;
-
-const mergedMap = {};
-
-strategySeries.dates.forEach((d, i) => {
-  mergedMap[d] = mergedMap[d] || {};
-  mergedMap[d].date = d;
-  mergedMap[d].strategy = strategySeries.portfolio_values[i];
-});
-
-if (indexSeries) {
-  indexSeries.dates.forEach((d, i) => {
-    mergedMap[d] = mergedMap[d] || {};
-    mergedMap[d].date = d;
-    mergedMap[d].index = indexSeries.values[i];
-  });
-}
-
-if (equalWeightSeries) {
-  equalWeightSeries.dates.forEach((d, i) => {
-    mergedMap[d] = mergedMap[d] || {};
-    mergedMap[d].date = d;
-    mergedMap[d].equal_weight = equalWeightSeries.values[i];
-  });
-}
-
-const comparisonData = Object.values(mergedMap)
-  .sort((a, b) => new Date(a.date) - new Date(b.date))
-  .map(row => ({
-    date: new Date(row.date).toLocaleDateString(),
-    strategy: row.strategy,
-    index: row.index,
-    equal_weight: row.equal_weight
-  }));
-
 };
 
 export default Results;
