@@ -20,7 +20,7 @@ warnings.filterwarnings('ignore')
 from walkforward_engine import WalkForwardEngine
 from predictive_models import PredictiveAlphaModel, EnsembleAlphaModel
 from feature_engineering import calculate_features
-from pypfopt import expected_returns, risk_models, EfficientFrontier
+from pypfopt import expected_returns, risk_models
 from pypfopt.efficient_frontier import EfficientFrontier
 
 
@@ -103,13 +103,9 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
         """
         Execute predictive walk-forward backtest.
         
-        At each rebalance date:
-        1. Train predictive model on past data
-        2. Generate forecasts for next period
-        3. Estimate covariance from longer history
-        4. Optimize portfolio with forecasts
-        5. Track performance and diagnostics
+        Returns parent's run() results with added predictive diagnostics.
         """
+        # Call parent's run method
         results = super().run()
         
         # Add predictive-specific diagnostics
@@ -123,24 +119,24 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
                 'model_type': self.model_type,
                 'forecast_horizon': self.forecast_horizon
             }
+            
+            # Add to main results for API response
+            results['ml_diagnostics'] = results['predictive_diagnostics']
         
         return results
     
     def optimize_at_date(self, rebalance_date):
         """
-        Optimize portfolio at rebalance date with predictive forecasts.
+        Override parent method to use predictive forecasts.
         
         This is the core method that differs from Phase 2.
-        
-        Key steps:
-        1. Get alpha lookback data for feature calculation
-        2. Get risk lookback data for covariance estimation
-        3. Train predictive model (if enabled)
-        4. Generate forecasts
-        5. Optimize with forecasts
         """
+        if not self.use_predictive:
+            # Fall back to parent's historical optimization
+            return super().optimize_at_date(rebalance_date)
+        
         print(f"\n{'─'*80}")
-        print(f"Rebalancing at {rebalance_date.strftime('%Y-%m-%d')}")
+        print(f"Rebalancing at {rebalance_date.strftime('%Y-%m-%d')} (PREDICTIVE MODE)")
         print(f"{'─'*80}")
         
         # Get data for alpha estimation (shorter window)
@@ -174,15 +170,17 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
         current_tickers = alpha_data.index.get_level_values('ticker').unique().tolist()
         
         # Generate forecasts
-        if self.use_predictive:
-            forecast_dict = self._generate_ml_forecasts(
-                features_df,
-                alpha_data,
-                rebalance_date,
-                current_tickers
-            )
-        else:
-            forecast_dict = None
+        forecast_dict = self._generate_ml_forecasts(
+            features_df,
+            alpha_data,
+            rebalance_date,
+            current_tickers
+        )
+        
+        if forecast_dict is None:
+            print("  ⚠️  Falling back to historical means")
+            # Fall back to parent optimization
+            return super().optimize_at_date(rebalance_date)
         
         # Optimize portfolio with forecasts
         portfolio_results = self._optimize_with_forecasts(
@@ -190,13 +188,6 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
             forecast_dict,
             rebalance_date
         )
-        
-        if portfolio_results is None:
-            return None
-        
-        # Track forecast quality (for next rebalance)
-        if forecast_dict is not None:
-            self._track_forecast_quality(forecast_dict, rebalance_date)
         
         return portfolio_results
     
@@ -230,7 +221,7 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
         
         Returns:
         --------
-        dict : {ticker: expected_return}
+        dict : {ticker: expected_return} or None if training fails
         """
         print("\n  🤖 Training predictive model...")
         
@@ -251,7 +242,6 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
             )
         
         # Prepare training data
-        # Use monthly rebalances for training
         price_df = price_data['adj close'].unstack('ticker')
         
         # Generate past rebalance dates (monthly)
@@ -268,44 +258,44 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
             print("  ⚠️  Insufficient training periods (<6 months)")
             return None
         
-        X, y, dates, tickers = self.alpha_model.prepare_training_data(
-            features_df,
-            price_df,
-            train_rebalance_dates
-        )
-        
-        if len(X) < 30:  # Minimum 30 samples
-            print(f"  ⚠️  Insufficient training samples ({len(X)})")
-            return None
-        
-        # Train with cross-validation
-        cv_results = self.alpha_model.train_with_cross_validation(X, y, dates, n_splits=3)
-        
-        # Store IC
-        self.ic_history.append({
-            'date': rebalance_date,
-            'ic': cv_results['mean_ic'],
-            'ic_std': cv_results['std_ic']
-        })
-        
-        print(f"\n  ✅ Model trained. CV IC: {cv_results['mean_ic']:.4f}±{cv_results['std_ic']:.4f}")
-        
-        # Train on full data
-        self.alpha_model.train(X, y)
-        
-        # Get feature importance
-        if hasattr(self.alpha_model, 'get_feature_importance'):
-            importance = self.alpha_model.get_feature_importance(
-                feature_names=features_df.columns.tolist()
-            )
-            if importance is not None:
-                self.feature_importance_history.append({
-                    'date': rebalance_date,
-                    'importance': importance.to_dict('records')
-                })
-        
-        # Generate forecasts for current universe
         try:
+            X, y, dates, tickers = self.alpha_model.prepare_training_data(
+                features_df,
+                price_df,
+                train_rebalance_dates
+            )
+            
+            if len(X) < 30:  # Minimum 30 samples
+                print(f"  ⚠️  Insufficient training samples ({len(X)})")
+                return None
+            
+            # Train with cross-validation
+            cv_results = self.alpha_model.train_with_cross_validation(X, y, dates, n_splits=3)
+            
+            # Store IC
+            self.ic_history.append({
+                'date': rebalance_date,
+                'ic': cv_results['mean_ic'],
+                'ic_std': cv_results['std_ic']
+            })
+            
+            print(f"\n  ✅ Model trained. CV IC: {cv_results['mean_ic']:.4f}±{cv_results['std_ic']:.4f}")
+            
+            # Train on full data
+            self.alpha_model.train(X, y)
+            
+            # Get feature importance
+            if hasattr(self.alpha_model, 'get_feature_importance'):
+                importance = self.alpha_model.get_feature_importance(
+                    feature_names=features_df.columns.tolist()
+                )
+                if importance is not None:
+                    self.feature_importance_history.append({
+                        'date': rebalance_date,
+                        'importance': importance.to_dict('records')
+                    })
+            
+            # Generate forecasts for current universe
             latest_date = features_df.index.get_level_values('date').max()
             features_now = features_df.loc[latest_date]
             
@@ -338,6 +328,8 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
         
         except Exception as e:
             print(f"  ❌ Forecast generation failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return None
     
     def _optimize_with_forecasts(self, risk_data, forecast_dict, rebalance_date):
@@ -368,32 +360,26 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
             # Use Ledoit-Wolf shrinkage for robustness
             S = risk_models.CovarianceShrinkage(price_df).ledoit_wolf()
         except Exception as e:
-            print(f"  ⚠️  Covariance estimation failed: {str(e)}")
-            # Fallback to sample covariance
+            print(f"  ⚠️  Shrinkage failed, using sample covariance: {str(e)}")
             S = risk_models.sample_cov(price_df)
         
         # Estimate expected returns (ALPHA)
-        if forecast_dict is not None:
-            # Use ML forecasts
-            mu = pd.Series({
-                ticker: forecast_dict.get(ticker, 0.0)
-                for ticker in valid_tickers
-            })
-            
-            # Shift forecasts to ensure positive expected returns
-            # (EfficientFrontier requires positive expected returns for max Sharpe)
-            min_return = mu.min()
-            if min_return < 0:
-                mu = mu - min_return + 0.01  # Shift to slightly positive
-            
-            print(f"     Using ML forecasts (alpha)")
-        else:
-            # Fallback to historical means
-            mu = expected_returns.mean_historical_return(price_df, frequency=252)
-            print(f"     Using historical means (fallback)")
+        # Use ML forecasts
+        mu = pd.Series({
+            ticker: forecast_dict.get(ticker, 0.0)
+            for ticker in valid_tickers
+        })
+        
+        # Shift forecasts to ensure positive expected returns
+        # (EfficientFrontier requires positive for max Sharpe)
+        min_return = mu.min()
+        if min_return < 0:
+            mu = mu - min_return + 0.01  # Shift to slightly positive
+        
+        print(f"     Using ML forecasts (alpha)")
         
         # Portfolio constraints
-        max_weight = self.config.get('max_weight', 0.15)  # Max 15% per stock
+        max_weight = self.config.get('max_weight', 0.17)  # Default 17%
         min_weight = self.config.get('min_weight', 0.0)   # Long-only
         
         # Optimize
@@ -430,24 +416,15 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
                 'expected_return': float(perf[0]),
                 'volatility': float(perf[1]),
                 'sharpe_ratio': float(perf[2]),
-                'forecast_based': forecast_dict is not None,
-                'num_stocks': len(weights)
+                'n_stocks': len(weights),
+                'clusters': {}  # Not used in predictive mode
             }
         
         except Exception as e:
             print(f"  ❌ Optimization failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return None
-    
-    def _track_forecast_quality(self, forecast_dict, rebalance_date):
-        """
-        Track realized returns vs forecasts for IC calculation.
-        
-        This is checked at the NEXT rebalance to compute realized IC.
-        """
-        self.realized_vs_forecast.append({
-            'date': rebalance_date,
-            'forecasts': forecast_dict.copy()
-        })
     
     def _assess_forecast_quality(self):
         """
@@ -474,80 +451,3 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
             'positive_ic_ratio': np.mean(np.array(ics) > 0),
             'num_periods': len(ics)
         }
-
-
-def optimize_portfolio_with_forecast(
-    stock_data,
-    forecast_dict=None,
-    cluster_labels=None,
-    risk_free_rate=0.05,
-    min_weight=0.0,
-    max_weight=0.15,
-    use_shrinkage=True
-):
-    """
-    Standalone portfolio optimization with ML forecasts.
-    
-    This is the core optimizer that accepts forecasts.
-    
-    Parameters:
-    -----------
-    stock_data : pd.DataFrame
-        Historical stock data (multi-index: date, ticker)
-    forecast_dict : dict or None
-        {ticker: expected_return} from ML model
-        If None, uses historical means
-    cluster_labels : dict or None
-        {ticker: cluster_id} for cluster-aware constraints
-    risk_free_rate : float
-        Risk-free rate for Sharpe calculation
-    min_weight : float
-        Minimum weight per stock (0 for long-only)
-    max_weight : float
-        Maximum weight per stock (e.g., 0.15 for 15% cap)
-    use_shrinkage : bool
-        Use Ledoit-Wolf shrinkage for covariance
-    
-    Returns:
-    --------
-    dict : Portfolio results
-    """
-    # Get price data
-    price_df = stock_data['adj close'].unstack('ticker')
-    
-    # Risk estimation
-    if use_shrinkage:
-        try:
-            S = risk_models.CovarianceShrinkage(price_df).ledoit_wolf()
-        except:
-            S = risk_models.sample_cov(price_df)
-    else:
-        S = risk_models.sample_cov(price_df)
-    
-    # Alpha estimation
-    if forecast_dict is not None:
-        # Use ML forecasts
-        tickers = price_df.columns
-        mu = pd.Series({t: forecast_dict.get(t, 0.0) for t in tickers})
-        
-        # Ensure positive returns
-        if mu.min() < 0:
-            mu = mu - mu.min() + 0.01
-    else:
-        # Historical means
-        mu = expected_returns.mean_historical_return(price_df, frequency=252)
-    
-    # Optimize
-    ef = EfficientFrontier(mu, S, weight_bounds=(min_weight, max_weight))
-    ef.max_sharpe(risk_free_rate=risk_free_rate)
-    
-    cleaned_weights = ef.clean_weights(cutoff=0.001)
-    performance = ef.portfolio_performance(risk_free_rate=risk_free_rate)
-    
-    return {
-        'weights': {k: v for k, v in cleaned_weights.items() if v > 0.001},
-        'expected_return': float(performance[0]),
-        'volatility': float(performance[1]),
-        'sharpe_ratio': float(performance[2]),
-        'forecast_based': forecast_dict is not None
-    }
