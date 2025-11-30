@@ -1,5 +1,4 @@
-"""
-Predictive Walk-Forward Portfolio Optimization Engine
+"""Predictive Walk-Forward Portfolio Optimization Engine
 
 Institutional-grade implementation with:
 - Machine learning return forecasts (alpha)
@@ -9,6 +8,7 @@ Institutional-grade implementation with:
 - IC tracking and diagnostics
 - Transaction cost modeling
 - Position and risk controls
+- Forward-looking portfolio recommendations
 """
 
 import numpy as np
@@ -25,50 +25,11 @@ from pypfopt.efficient_frontier import EfficientFrontier
 
 
 class PredictiveWalkForwardEngine(WalkForwardEngine):
-    """
-    Extended walk-forward engine with predictive alpha models.
+    """Extended walk-forward engine with predictive alpha models and forward recommendations."""
     
-    Key enhancements over Phase 2:
-    1. ML-based return forecasts instead of historical means
-    2. Separate alpha (short window) and risk (long window) estimation
-    3. Information Coefficient tracking
-    4. Model diagnostics and feature importance
-    5. Ensemble modeling for robustness
-    """
-    
-    def __init__(
-        self,
-        stock_data,
-        config,
-        use_predictive=True,
-        model_type='ridge',
-        forecast_horizon=3,
-        use_ensemble=False,
-        alpha_lookback_months=12,
-        risk_lookback_months=36
-    ):
-        """
-        Initialize predictive walk-forward engine.
-        
-        Parameters:
-        -----------
-        stock_data : pd.DataFrame
-            Multi-index stock data (date, ticker)
-        config : dict
-            Configuration parameters
-        use_predictive : bool
-            Use ML forecasts (True) or historical means (False)
-        model_type : str
-            'ridge', 'lasso', 'elastic_net', 'random_forest', 'gradient_boosting'
-        forecast_horizon : int
-            Forecasting horizon in months
-        use_ensemble : bool
-            Use ensemble of models for robustness
-        alpha_lookback_months : int
-            Lookback window for alpha signals (features)
-        risk_lookback_months : int
-            Lookback window for risk estimation (covariance)
-        """
+    def __init__(self, stock_data, config, use_predictive=True, model_type='ridge',
+                 forecast_horizon=3, use_ensemble=False, alpha_lookback_months=12,
+                 risk_lookback_months=36):
         super().__init__(stock_data, config)
         
         self.use_predictive = use_predictive
@@ -83,8 +44,6 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
         self.ic_history = []
         self.forecast_history = []
         self.feature_importance_history = []
-        
-        # Enhanced diagnostics
         self.realized_vs_forecast = []
         
         print(f"\n{'='*80}")
@@ -100,11 +59,7 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
         print(f"{'='*80}\n")
     
     def run(self):
-        """
-        Execute predictive walk-forward backtest.
-        
-        Returns parent's run() results with added predictive diagnostics.
-        """
+        """Execute predictive walk-forward backtest with forward portfolio generation."""
         # Call parent's run method
         results = super().run()
         
@@ -119,37 +74,165 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
                 'model_type': self.model_type,
                 'forecast_horizon': self.forecast_horizon
             }
-            
-            # Add to main results for API response
             results['ml_diagnostics'] = results['predictive_diagnostics']
+        
+        # 🆕 Generate forward-looking portfolio for next period
+        if self.use_predictive:
+            forward_portfolio = self._generate_forward_portfolio()
+            if forward_portfolio:
+                results['forward_portfolio'] = forward_portfolio
+                print(f"\n{'='*80}")
+                print("📈 FORWARD-LOOKING PORTFOLIO GENERATED")
+                print(f"{'='*80}")
+                print(f"Next Period Portfolio ({len(forward_portfolio['weights'])} stocks):")
+                for ticker, weight in sorted(forward_portfolio['weights'].items(), key=lambda x: x[1], reverse=True):
+                    print(f"  {ticker:15s} {weight:>7.2%}")
+                print(f"\nExpected Return: {forward_portfolio['expected_return']:.2%}")
+                print(f"Expected Volatility: {forward_portfolio['volatility']:.2%}")
+                print(f"Expected Sharpe: {forward_portfolio['sharpe_ratio']:.2f}")
+                print(f"Forecast Horizon: {self.forecast_horizon} months")
+                print(f"{'='*80}\n")
         
         return results
     
-    def optimize_at_date(self, rebalance_date):
+    def _generate_forward_portfolio(self):
         """
-        Override parent method to use predictive forecasts.
+        Generate forward-looking portfolio recommendation for the NEXT period.
         
-        This is the core method that differs from Phase 2.
+        This is the key deliverable: "What should I invest in NOW?"
+        
+        Returns:
+        --------
+        dict : {
+            'weights': {ticker: weight},
+            'forecasts': {ticker: expected_return},
+            'expected_return': float,
+            'volatility': float,
+            'sharpe_ratio': float,
+            'recommendation_date': str,
+            'valid_for_period': str (e.g., "2025-12 to 2026-02")
+        }
         """
+        try:
+            print(f"\n{'─'*80}")
+            print("🔮 GENERATING FORWARD PORTFOLIO RECOMMENDATION")
+            print(f"{'─'*80}")
+            
+            # Use latest available date
+            latest_date = self.dates.max()
+            print(f"  As of: {latest_date.strftime('%Y-%m-%d')}")
+            
+            # Get data for alpha estimation
+            alpha_data, alpha_start = self._get_lookback_data(
+                latest_date,
+                lookback_months=self.alpha_lookback_months
+            )
+            
+            # Get data for risk estimation
+            risk_data, risk_start = self._get_lookback_data(
+                latest_date,
+                lookback_months=self.risk_lookback_months
+            )
+            
+            if alpha_data.empty or risk_data.empty:
+                print("  ⚠️  Insufficient data for forward portfolio")
+                return None
+            
+            # Calculate features
+            print("\n  📊 Computing features on latest data...")
+            features_df = calculate_features(alpha_data)
+            
+            if features_df.empty:
+                print("  ⚠️  Feature calculation failed")
+                return None
+            
+            # Get current universe
+            current_tickers = alpha_data.index.get_level_values('ticker').unique().tolist()
+            
+            # Generate ML forecasts
+            forecast_dict = self._generate_ml_forecasts(
+                features_df,
+                alpha_data,
+                latest_date,
+                current_tickers
+            )
+            
+            if forecast_dict is None:
+                print("  ⚠️  Forecast generation failed")
+                return None
+            
+            # Optimize portfolio with forecasts
+            print("\n  ⚙️  Optimizing forward portfolio...")
+            
+            price_df = risk_data['adj close'].unstack('ticker')
+            min_obs = int(0.7 * len(price_df))
+            valid_tickers = price_df.columns[price_df.count() >= min_obs].tolist()
+            
+            if len(valid_tickers) < 5:
+                print(f"  ⚠️  Insufficient stocks ({len(valid_tickers)})")
+                return None
+            
+            price_df = price_df[valid_tickers]
+            
+            # Estimate covariance
+            try:
+                S = risk_models.CovarianceShrinkage(price_df).ledoit_wolf()
+            except:
+                S = risk_models.sample_cov(price_df)
+            
+            # Use ML forecasts
+            mu = pd.Series({ticker: forecast_dict.get(ticker, 0.0) for ticker in valid_tickers})
+            
+            # Shift to positive
+            min_return = mu.min()
+            if min_return < 0:
+                mu = mu - min_return + 0.01
+            
+            # Optimize
+            max_weight = self.config.get('max_weight', 0.17)
+            min_weight = self.config.get('min_weight', 0.0)
+            
+            ef = EfficientFrontier(mu, S, weight_bounds=(min_weight, max_weight))
+            ef.max_sharpe(risk_free_rate=self.config.get('risk_free_rate', 0.05))
+            
+            cleaned_weights = ef.clean_weights(cutoff=0.001)
+            weights = {k: v for k, v in cleaned_weights.items() if v > 0.001}
+            
+            perf = ef.portfolio_performance(risk_free_rate=self.config.get('risk_free_rate', 0.05))
+            
+            # Calculate valid period
+            next_month_start = latest_date + pd.DateOffset(months=1)
+            forecast_end = next_month_start + pd.DateOffset(months=self.forecast_horizon)
+            
+            return {
+                'weights': weights,
+                'forecasts': {k: forecast_dict.get(k, 0.0) for k in weights.keys()},
+                'expected_return': float(perf[0]),
+                'volatility': float(perf[1]),
+                'sharpe_ratio': float(perf[2]),
+                'recommendation_date': latest_date.strftime('%Y-%m-%d'),
+                'valid_for_period': f"{next_month_start.strftime('%Y-%m')} to {forecast_end.strftime('%Y-%m')}",
+                'n_stocks': len(weights),
+                'forecast_horizon_months': self.forecast_horizon
+            }
+            
+        except Exception as e:
+            print(f"  ❌ Forward portfolio generation failed: {str(e)}")
+            import traceback
+            traceback.print_exc()
+            return None
+    
+    def optimize_at_date(self, rebalance_date):
+        """Override parent method to use predictive forecasts."""
         if not self.use_predictive:
-            # Fall back to parent's historical optimization
             return super().optimize_at_date(rebalance_date)
         
         print(f"\n{'─'*80}")
         print(f"Rebalancing at {rebalance_date.strftime('%Y-%m-%d')} (PREDICTIVE MODE)")
         print(f"{'─'*80}")
         
-        # Get data for alpha estimation (shorter window)
-        alpha_data, alpha_start = self._get_lookback_data(
-            rebalance_date,
-            lookback_months=self.alpha_lookback_months
-        )
-        
-        # Get data for risk estimation (longer window)
-        risk_data, risk_start = self._get_lookback_data(
-            rebalance_date,
-            lookback_months=self.risk_lookback_months
-        )
+        alpha_data, alpha_start = self._get_lookback_data(rebalance_date, lookback_months=self.alpha_lookback_months)
+        risk_data, risk_start = self._get_lookback_data(rebalance_date, lookback_months=self.risk_lookback_months)
         
         if alpha_data.empty or risk_data.empty:
             print("  ⚠️  Insufficient data for optimization")
@@ -158,7 +241,6 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
         print(f"  Alpha window: {alpha_start.strftime('%Y-%m-%d')} to {rebalance_date.strftime('%Y-%m-%d')}")
         print(f"  Risk window: {risk_start.strftime('%Y-%m-%d')} to {rebalance_date.strftime('%Y-%m-%d')}")
         
-        # Calculate features from alpha window
         print("\n  📊 Calculating technical features...")
         features_df = calculate_features(alpha_data)
         
@@ -166,68 +248,31 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
             print("  ⚠️  No features computed")
             return None
         
-        # Get current universe of stocks
         current_tickers = alpha_data.index.get_level_values('ticker').unique().tolist()
-        
-        # Generate forecasts
-        forecast_dict = self._generate_ml_forecasts(
-            features_df,
-            alpha_data,
-            rebalance_date,
-            current_tickers
-        )
+        forecast_dict = self._generate_ml_forecasts(features_df, alpha_data, rebalance_date, current_tickers)
         
         if forecast_dict is None:
             print("  ⚠️  Falling back to historical means")
-            # Fall back to parent optimization
             return super().optimize_at_date(rebalance_date)
         
-        # Optimize portfolio with forecasts
-        portfolio_results = self._optimize_with_forecasts(
-            risk_data,
-            forecast_dict,
-            rebalance_date
-        )
-        
+        portfolio_results = self._optimize_with_forecasts(risk_data, forecast_dict, rebalance_date)
         return portfolio_results
     
     def _get_lookback_data(self, rebalance_date, lookback_months):
-        """
-        Get lookback data for specified window.
-        
-        Returns:
-        --------
-        data : pd.DataFrame
-            Historical data
-        start_date : pd.Timestamp
-            Start of lookback period
-        """
-        # Calculate start date
+        """Get lookback data for specified window."""
         start_date = rebalance_date - pd.DateOffset(months=lookback_months)
-        
-        # Filter data
         mask = (
             (self.stock_data.index.get_level_values('date') < rebalance_date) &
             (self.stock_data.index.get_level_values('date') >= start_date)
         )
-        
         lookback_data = self.stock_data[mask].copy()
-        
         return lookback_data, start_date
     
     def _generate_ml_forecasts(self, features_df, price_data, rebalance_date, current_tickers):
-        """
-        Generate ML-based return forecasts.
-        
-        Returns:
-        --------
-        dict : {ticker: expected_return} or None if training fails
-        """
+        """Generate ML-based return forecasts."""
         print("\n  🤖 Training predictive model...")
         
-        # Initialize or reinitialize model
         if self.use_ensemble:
-            # Ensemble for robustness
             model_configs = [
                 {'type': 'ridge', 'alpha': 1.0},
                 {'type': 'elastic_net', 'alpha': 1.0},
@@ -241,38 +286,25 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
                 alpha=1.0
             )
         
-        # Prepare training data
         price_df = price_data['adj close'].unstack('ticker')
-        
-        # Generate past rebalance dates (monthly)
         train_start = features_df.index.get_level_values('date').min()
-        train_end = rebalance_date - pd.DateOffset(months=1)  # Exclude current month
+        train_end = rebalance_date - pd.DateOffset(months=1)
         
-        train_rebalance_dates = pd.date_range(
-            start=train_start,
-            end=train_end,
-            freq='ME'  # Month-end
-        )
+        train_rebalance_dates = pd.date_range(start=train_start, end=train_end, freq='ME')
         
         if len(train_rebalance_dates) < 6:
             print("  ⚠️  Insufficient training periods (<6 months)")
             return None
         
         try:
-            X, y, dates, tickers = self.alpha_model.prepare_training_data(
-                features_df,
-                price_df,
-                train_rebalance_dates
-            )
+            X, y, dates, tickers = self.alpha_model.prepare_training_data(features_df, price_df, train_rebalance_dates)
             
-            if len(X) < 30:  # Minimum 30 samples
+            if len(X) < 30:
                 print(f"  ⚠️  Insufficient training samples ({len(X)})")
                 return None
             
-            # Train with cross-validation
             cv_results = self.alpha_model.train_with_cross_validation(X, y, dates, n_splits=3)
             
-            # Store IC
             self.ic_history.append({
                 'date': rebalance_date,
                 'ic': cv_results['mean_ic'],
@@ -281,42 +313,28 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
             
             print(f"\n  ✅ Model trained. CV IC: {cv_results['mean_ic']:.4f}±{cv_results['std_ic']:.4f}")
             
-            # Train on full data
             self.alpha_model.train(X, y)
             
-            # Get feature importance
             if hasattr(self.alpha_model, 'get_feature_importance'):
-                importance = self.alpha_model.get_feature_importance(
-                    feature_names=features_df.columns.tolist()
-                )
+                importance = self.alpha_model.get_feature_importance(feature_names=features_df.columns.tolist())
                 if importance is not None:
                     self.feature_importance_history.append({
                         'date': rebalance_date,
                         'importance': importance.to_dict('records')
                     })
             
-            # Generate forecasts for current universe
             latest_date = features_df.index.get_level_values('date').max()
             features_now = features_df.loc[latest_date]
-            
-            # Filter to current tickers
             features_now = features_now.loc[features_now.index.isin(current_tickers)]
             
             if features_now.empty:
                 print("  ⚠️  No features for current tickers")
                 return None
             
-            # Predict
             predictions = self.alpha_model.predict(features_now.values)
-            
-            # Create forecast dictionary
             forecast_dict = dict(zip(features_now.index, predictions))
             
-            # Store forecasts
-            self.forecast_history.append({
-                'date': rebalance_date,
-                'forecasts': forecast_dict.copy()
-            })
+            self.forecast_history.append({'date': rebalance_date, 'forecasts': forecast_dict.copy()})
             
             print(f"\n  📈 Forecasts generated for {len(forecast_dict)} stocks")
             print(f"     Mean: {np.mean(list(forecast_dict.values())):.2%}")
@@ -333,20 +351,11 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
             return None
     
     def _optimize_with_forecasts(self, risk_data, forecast_dict, rebalance_date):
-        """
-        Optimize portfolio using ML forecasts and robust risk estimates.
-        
-        Key principle: Alpha-Risk Separation
-        - Alpha (expected returns): From ML forecasts (short window)
-        - Risk (covariance): From historical data (long window)
-        """
+        """Optimize portfolio using ML forecasts and robust risk estimates."""
         print("\n  ⚙️  Optimizing portfolio...")
         
-        # Get price data for risk estimation
         price_df = risk_data['adj close'].unstack('ticker')
-        
-        # Remove stocks with insufficient data
-        min_obs = int(0.7 * len(price_df))  # Require 70% data availability
+        min_obs = int(0.7 * len(price_df))
         valid_tickers = price_df.columns[price_df.count() >= min_obs].tolist()
         
         if len(valid_tickers) < 5:
@@ -355,54 +364,31 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
         
         price_df = price_df[valid_tickers]
         
-        # Estimate covariance (RISK)
         try:
-            # Use Ledoit-Wolf shrinkage for robustness
             S = risk_models.CovarianceShrinkage(price_df).ledoit_wolf()
         except Exception as e:
             print(f"  ⚠️  Shrinkage failed, using sample covariance: {str(e)}")
             S = risk_models.sample_cov(price_df)
         
-        # Estimate expected returns (ALPHA)
-        # Use ML forecasts
-        mu = pd.Series({
-            ticker: forecast_dict.get(ticker, 0.0)
-            for ticker in valid_tickers
-        })
+        mu = pd.Series({ticker: forecast_dict.get(ticker, 0.0) for ticker in valid_tickers})
         
-        # Shift forecasts to ensure positive expected returns
-        # (EfficientFrontier requires positive for max Sharpe)
         min_return = mu.min()
         if min_return < 0:
-            mu = mu - min_return + 0.01  # Shift to slightly positive
+            mu = mu - min_return + 0.01
         
         print(f"     Using ML forecasts (alpha)")
         
-        # Portfolio constraints
-        max_weight = self.config.get('max_weight', 0.17)  # Default 17%
-        min_weight = self.config.get('min_weight', 0.0)   # Long-only
+        max_weight = self.config.get('max_weight', 0.17)
+        min_weight = self.config.get('min_weight', 0.0)
         
-        # Optimize
         try:
-            ef = EfficientFrontier(
-                mu, 
-                S, 
-                weight_bounds=(min_weight, max_weight)
-            )
-            
-            # Max Sharpe ratio
+            ef = EfficientFrontier(mu, S, weight_bounds=(min_weight, max_weight))
             ef.max_sharpe(risk_free_rate=self.config.get('risk_free_rate', 0.05))
             
-            # Get weights
-            cleaned_weights = ef.clean_weights(cutoff=0.001)  # Remove tiny weights
-            
-            # Filter non-zero weights
+            cleaned_weights = ef.clean_weights(cutoff=0.001)
             weights = {k: v for k, v in cleaned_weights.items() if v > 0.001}
             
-            # Performance metrics
-            perf = ef.portfolio_performance(
-                risk_free_rate=self.config.get('risk_free_rate', 0.05)
-            )
+            perf = ef.portfolio_performance(risk_free_rate=self.config.get('risk_free_rate', 0.05))
             
             print(f"\n  ✅ Optimization complete")
             print(f"     Allocated: {len(weights)} stocks")
@@ -417,7 +403,7 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
                 'volatility': float(perf[1]),
                 'sharpe_ratio': float(perf[2]),
                 'n_stocks': len(weights),
-                'clusters': {}  # Not used in predictive mode
+                'clusters': {}
             }
         
         except Exception as e:
@@ -427,13 +413,7 @@ class PredictiveWalkForwardEngine(WalkForwardEngine):
             return None
     
     def _assess_forecast_quality(self):
-        """
-        Assess overall forecast quality across all rebalances.
-        
-        Returns:
-        --------
-        dict : Quality metrics
-        """
+        """Assess overall forecast quality across all rebalances."""
         if len(self.ic_history) == 0:
             return None
         
