@@ -19,6 +19,16 @@ export const optimizePortfolio = async (params) => {
   }
 };
 
+export const optimizeWalkForward = async (params) => {
+  try {
+    const response = await api.post('/api/optimize/walkforward', params);
+    return response.data;
+  } catch (error) {
+    console.error('API Error:', error.response?.data || error.message);
+    throw new Error(error.response?.data?.error || 'Failed to run walk-forward backtest');
+  }
+};
+
 export const getIndexTickers = async (index) => {
   try {
     const response = await api.get(`/api/tickers/${index}`);

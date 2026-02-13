@@ -5,15 +5,51 @@ import './Results.css';
 const COLORS = ['#667eea', '#764ba2', '#f093fb', '#4facfe', '#00f2fe', '#43e97b', '#fa709a', '#fee140'];
 
 const Results = ({ data }) => {
+  // Handle undefined or null data
+  if (!data) {
+    return (
+      <div className="results">
+        <div className="error-message">
+          <h3>⚠️ No Results Available</h3>
+          <p>Please run the optimization first.</p>
+        </div>
+      </div>
+    );
+  }
+
   const { clusters, portfolio, backtest } = data;
 
-  // Prepare portfolio allocation data for pie chart
-const allocationData = Object.entries(portfolio.weights).map(([ticker, weight]) => ({
-  name: ticker,
-  value: parseFloat((weight * 100).toFixed(2)),  // Convert to number!
-  weight: weight
-}));
+  // Check if we have the required data
+  if (!portfolio || !portfolio.weights) {
+    return (
+      <div className="results">
+        <div className="error-message">
+          <h3>⚠️ Portfolio Data Missing</h3>
+          <p>The optimization did not return valid portfolio weights.</p>
+          <p>Try adjusting your parameters or stock selection.</p>
+        </div>
+      </div>
+    );
+  }
 
+  if (!backtest || !backtest.time_series) {
+    return (
+      <div className="results">
+        <div className="error-message">
+          <h3>⚠️ Backtest Data Missing</h3>
+          <p>The backtest did not complete successfully.</p>
+          <p>Try adjusting your date range or parameters.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Prepare portfolio allocation data for pie chart
+  const allocationData = Object.entries(portfolio.weights).map(([ticker, weight]) => ({
+    name: ticker,
+    value: parseFloat((weight * 100).toFixed(2)),  // Convert to number!
+    weight: weight
+  }));
 
   // Prepare time series data
   const timeSeriesData = backtest.time_series.dates.map((date, index) => ({
@@ -55,7 +91,7 @@ const allocationData = Object.entries(portfolio.weights).map(([ticker, weight]) 
           <div className="metric-icon">🏛️</div>
           <div className="metric-content">
             <div className="metric-label">Selected Stocks</div>
-            <div className="metric-value">{portfolio.n_selected_stocks}</div>
+            <div className="metric-value">{portfolio.n_selected_stocks || Object.keys(portfolio.weights).length}</div>
           </div>
         </div>
       </div>
@@ -101,30 +137,29 @@ const allocationData = Object.entries(portfolio.weights).map(([ticker, weight]) 
       </div>
 
       {/* Portfolio Allocation Pie Chart */}
-<div className="section">
-  <h3>🍰 Portfolio Allocation</h3>
-  <ResponsiveContainer width="100%" height={400}>
-    <PieChart>
-      <Pie
-        data={allocationData}
-        cx="50%"
-        cy="50%"
-        labelLine={true}
-        label={({ name, value }) => `${name.split('.')[0]}: ${parseFloat(value).toFixed(1)}%`}
-        outerRadius={120}
-        fill="#8884d8"
-        dataKey="value"
-      >
-        {allocationData.map((entry, index) => (
-          <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-        ))}
-      </Pie>
-      <Tooltip formatter={(value) => `${parseFloat(value).toFixed(2)}%`} />
-      <Legend />
-    </PieChart>
-  </ResponsiveContainer>
-</div>
-
+      <div className="section">
+        <h3>🍰 Portfolio Allocation</h3>
+        <ResponsiveContainer width="100%" height={400}>
+          <PieChart>
+            <Pie
+              data={allocationData}
+              cx="50%"
+              cy="50%"
+              labelLine={true}
+              label={({ name, value }) => `${name.split('.')[0]}: ${parseFloat(value).toFixed(1)}%`}
+              outerRadius={120}
+              fill="#8884d8"
+              dataKey="value"
+            >
+              {allocationData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip formatter={(value) => `${parseFloat(value).toFixed(2)}%`} />
+            <Legend />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
 
       {/* Portfolio Value Over Time */}
       <div className="section">
@@ -150,31 +185,33 @@ const allocationData = Object.entries(portfolio.weights).map(([ticker, weight]) 
         </ResponsiveContainer>
       </div>
 
-      {/* Cluster Information */}
-      <div className="section">
-        <h3>🧩 Cluster Analysis</h3>
-        <div className="cluster-info">
-          <p><strong>Silhouette Score:</strong> {clusters.silhouette_score.toFixed(3)}</p>
-          <div className="clusters-grid">
-            {clusters.cluster_stats.map((cluster, index) => (
-              <div key={index} className="cluster-card" style={{borderColor: COLORS[index % COLORS.length]}}>
-                <h4>Cluster {cluster.cluster_id + 1}</h4>
-                <p><strong>Stocks:</strong> {cluster.n_stocks}</p>
-                <p><strong>Avg RSI:</strong> {cluster.avg_rsi.toFixed(2)}</p>
-                <p><strong>Avg Volatility:</strong> {(cluster.avg_volatility * 100).toFixed(4)}%</p>
-                <details>
-                  <summary>View Stocks</summary>
-                  <div className="stock-list">
-                    {cluster.stocks.map(stock => (
-                      <span key={stock} className="stock-tag">{stock}</span>
-                    ))}
-                  </div>
-                </details>
-              </div>
-            ))}
+      {/* Cluster Information - Only show if available */}
+      {clusters && clusters.cluster_stats && clusters.cluster_stats.length > 0 && (
+        <div className="section">
+          <h3>🧩 Cluster Analysis</h3>
+          <div className="cluster-info">
+            <p><strong>Silhouette Score:</strong> {clusters.silhouette_score.toFixed(3)}</p>
+            <div className="clusters-grid">
+              {clusters.cluster_stats.map((cluster, index) => (
+                <div key={index} className="cluster-card" style={{borderColor: COLORS[index % COLORS.length]}}>
+                  <h4>Cluster {cluster.cluster_id + 1}</h4>
+                  <p><strong>Stocks:</strong> {cluster.n_stocks}</p>
+                  <p><strong>Avg RSI:</strong> {cluster.avg_rsi.toFixed(2)}</p>
+                  <p><strong>Avg Volatility:</strong> {(cluster.avg_volatility * 100).toFixed(4)}%</p>
+                  <details>
+                    <summary>View Stocks</summary>
+                    <div className="stock-list">
+                      {cluster.stocks.map(stock => (
+                        <span key={stock} className="stock-tag">{stock}</span>
+                      ))}
+                    </div>
+                  </details>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Portfolio Weights Table */}
       <div className="section">
@@ -193,7 +230,7 @@ const allocationData = Object.entries(portfolio.weights).map(([ticker, weight]) 
                 <tr key={ticker}>
                   <td>{ticker}</td>
                   <td>{(weight * 100).toFixed(2)}%</td>
-                  <td>₹{(weight * backtest.initial_capital).toLocaleString('en-IN', {maximumFractionDigits: 0})}</td>
+                  <td>₹{(weight * (backtest.initial_capital || 100000)).toLocaleString('en-IN', {maximumFractionDigits: 0})}</td>
                 </tr>
               ))}
             </tbody>
